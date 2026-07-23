@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestione Pose · Arquati Eco Living</title>
+<meta name="theme-color" content="#356B41">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Pose Arquati">
+<link id="appleIcon" rel="apple-touch-icon" href="">
+<link id="manifestLink" rel="manifest" href="">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{
+  --bg:#EEF2EC; --panel:#FFFFFF; --ink:#18231C; --muted:#6C7A70; --line:#DCE4DA;
+  --brand:#4F8A52; --brand-dk:#356B41; --brand-soft:#E4EFE1;
+  --accent:#E4532B; --accent-soft:#FBE5DD;
+  --gold:#C79A2E;
+  --f-org:#E2E2E2; --f-ass:#F4DE9A; --f-pro:#D9CFEA; --f-con:#B9D6EE; --f-inst:#BFE0B4; --f-rec:#F1B0B0;
+  --shadow:0 1px 2px rgba(24,35,28,.06),0 8px 24px rgba(24,35,28,.05);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif;font-size:14px;line-height:1.45}
+.mono{font-variant-numeric:tabular-nums}
+h1,h2,h3,.disp{font-family:'Space Grotesk',Inter,sans-serif;letter-spacing:-.01em}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:14px}
+a{color:var(--brand-dk)}
+.app{display:flex;min-height:100vh}
+/* sidebar */
+.side{width:230px;flex:0 0 230px;background:var(--brand-dk);color:#EAF3E8;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.brand{padding:20px 20px 14px;display:flex;align-items:center;gap:11px;border-bottom:1px solid rgba(255,255,255,.12)}
+.sun{width:30px;height:30px;flex:0 0 30px;border-radius:50%;background:radial-gradient(circle at 50% 45%,#F6B24A,var(--accent));position:relative;box-shadow:0 0 0 3px rgba(228,83,43,.18)}
+.brand b{font-family:'Space Grotesk';font-size:16px;letter-spacing:.02em;display:block;line-height:1.1}
+.brand span{font-size:10px;letter-spacing:.28em;color:#B9D3B4;text-transform:uppercase}
+.nav{padding:10px 10px;flex:1;overflow:auto}
+.nav button{width:100%;text-align:left;background:none;border:0;color:#CFE3CB;padding:10px 12px;border-radius:9px;display:flex;align-items:center;gap:10px;font-weight:500;font-size:13.5px;margin-bottom:2px}
+.nav button:hover{background:rgba(255,255,255,.08);color:#fff}
+.nav button.on{background:#EEF2EC;color:var(--brand-dk);font-weight:600}
+.nav .ic{width:18px;text-align:center;font-size:15px}
+.side .foot{padding:12px 16px;border-top:1px solid rgba(255,255,255,.12);font-size:11px;color:#9FBE9A}
+/* main */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{background:var(--panel);border-bottom:1px solid var(--line);padding:16px 26px;display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;top:0;z-index:5}
+.top h1{margin:0;font-size:20px}
+.top .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+.wrap{padding:22px 26px;max-width:1500px;width:100%}
+.btn{background:var(--brand);color:#fff;border:0;padding:9px 16px;border-radius:9px;font-weight:600;font-size:13.5px;display:inline-flex;align-items:center;gap:7px}
+.btn:hover{background:var(--brand-dk)}
+.btn.acc{background:var(--accent)} .btn.acc:hover{background:#c8431f}
+.btn.gh{background:#fff;color:var(--ink);border:1px solid var(--line)} .btn.gh:hover{border-color:var(--brand);color:var(--brand-dk)}
+.btn.sm{padding:6px 11px;font-size:12.5px;border-radius:8px}
+.btn.link{background:none;color:var(--muted);padding:5px 8px} .btn.link:hover{color:var(--accent)}
+/* cards */
+.grid{display:grid;gap:14px}
+.kpis{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 16px;box-shadow:var(--shadow)}
+.kpi .lab{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.kpi .val{font-family:'Space Grotesk';font-size:27px;font-weight:700;margin-top:5px}
+.kpi.euro .val{color:var(--brand-dk)} .kpi.warn .val{color:var(--accent)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+.card h3{margin:0;padding:14px 18px;border-bottom:1px solid var(--line);font-size:14.5px;display:flex;justify-content:space-between;align-items:center}
+.card .bd{padding:14px 18px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:900px){.two{grid-template-columns:1fr}}
+/* table */
+.tbl-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--panel);box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:9px 11px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{background:#F6F9F5;color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;z-index:1}
+tr:last-child td{border-bottom:0}
+tr:hover td{background:#F9FBF8}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.eur{font-variant-numeric:tabular-nums;font-weight:600}
+/* phase pill */
+.pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.ph-Daassegnare{background:var(--f-org)} .ph-Assegnato{background:var(--f-ass)} .ph-Prontoconsegna{background:var(--f-pro)}
+.ph-Consegnato{background:var(--f-con)} .ph-Installato{background:var(--f-inst)} .ph-RECESSO{background:var(--f-rec)}
+.tag{display:inline-block;padding:2px 8px;border-radius:6px;background:var(--brand-soft);color:var(--brand-dk);font-size:11.5px;font-weight:600}
+.tag.warm{background:var(--accent-soft);color:#b8431f}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.flag{display:inline-block;padding:2px 8px;border-radius:6px;background:#FFF3D6;color:#7a5c00;font-size:11px;font-weight:700}
+/* filters */
+.filters{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:14px;align-items:center}
+.filters input,.filters select{padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;min-width:130px}
+.filters input:focus,.filters select:focus{outline:2px solid var(--brand-soft);border-color:var(--brand)}
+/* modal */
+.ovl{position:fixed;inset:0;background:rgba(24,35,28,.45);display:flex;justify-content:center;align-items:flex-start;padding:30px 16px;z-index:40;overflow:auto}
+.modal{background:var(--panel);border-radius:16px;width:100%;max-width:960px;box-shadow:0 30px 80px rgba(0,0,0,.3);animation:pop .18s ease}
+@keyframes pop{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+.modal .hd{padding:16px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;border-radius:16px 16px 0 0}
+.modal .hd h2{margin:0;font-size:18px}
+.modal .bd{padding:20px 22px}
+.modal .ft{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;align-items:center;position:sticky;bottom:0;background:#fff;border-radius:0 0 16px 16px}
+.x{background:none;border:0;font-size:22px;color:var(--muted);line-height:1;padding:2px 6px}
+.x:hover{color:var(--accent)}
+/* form */
+.form{display:grid;grid-template-columns:repeat(2,1fr);gap:13px 16px}
+.form .full{grid-column:1/-1}
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld label{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+.fld input,.fld select,.fld textarea{padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#fff}
+.fld input:focus,.fld select:focus,.fld textarea:focus{outline:2px solid var(--brand-soft);border-color:var(--brand)}
+.sec{grid-column:1/-1;font-family:'Space Grotesk';font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--brand-dk);border-bottom:2px solid var(--brand-soft);padding-bottom:5px;margin-top:6px}
+.slotrow{display:grid;grid-template-columns:1fr 70px;gap:8px;align-items:end}
+/* live compenso panel */
+.calc{grid-column:1/-1;background:var(--brand-soft);border:1px solid #CFE2CA;border-radius:12px;padding:14px 16px;display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:space-between}
+.calc .row{display:flex;gap:20px;flex-wrap:wrap}
+.calc .it .k{font-size:11px;color:var(--brand-dk);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.calc .it .v{font-family:'Space Grotesk';font-size:20px;font-weight:700}
+.calc .big .v{font-size:26px;color:var(--brand-dk)}
+/* pipeline signature */
+.pipe{display:flex;gap:3px;margin-top:3px}
+.pipe .st{height:7px;border-radius:3px;flex:1;background:#E3E9E1}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+.empty .big{font-size:15px;color:var(--ink);font-weight:600;margin-bottom:4px}
+.hint{font-size:12px;color:var(--muted)}
+.rowbtns{display:flex;gap:4px}
+.miss{color:var(--accent);font-weight:600}
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 20px;border-radius:10px;box-shadow:var(--shadow);z-index:60;font-weight:500;animation:pop .2s}
+.split{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+.att{width:96px;position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+.att img{width:96px;height:72px;object-fit:cover;display:block;cursor:pointer}
+.attv{width:96px;height:72px;display:flex;align-items:center;justify-content:center;font-size:30px;background:#F3F6F1;cursor:pointer}
+.attname{font-size:10px;padding:3px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.attx{position:absolute;top:3px;right:3px;width:20px;height:20px;border:0;border-radius:50%;background:rgba(24,35,28,.7);color:#fff;font-size:12px;line-height:1;cursor:pointer}
+.attx:hover{background:var(--accent)}
+@media(max-width:1000px){
+  .split{grid-template-columns:1fr}.form{grid-template-columns:1fr}.two{grid-template-columns:1fr}
+  .app{flex-direction:column}
+  .side{width:100%;flex:none;height:auto;position:sticky;top:0;z-index:20}
+  .brand{padding:11px 16px}
+  .nav{display:flex;overflow-x:auto;padding:8px;gap:6px;-webkit-overflow-scrolling:touch}
+  .nav button{width:auto;white-space:nowrap;margin:0;flex:0 0 auto;font-size:13px;padding:8px 12px}
+  .side .foot{display:none}
+  .top{padding:12px 16px}.top h1{font-size:17px}.wrap{padding:14px}
+}
+.barrow{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+.barrow .nm{width:40px;font-size:12px;color:var(--muted);font-weight:600}
+.bar{flex:1;height:16px;background:#EEF2EC;border-radius:6px;overflow:hidden;display:flex}
+.bar .fill{background:var(--brand);height:100%}
+.bar .fill.b{background:var(--gold)}
+.barrow .vv{width:auto;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useMemo,useRef}=React;
+
+/* ---------- dati statici ---------- */
+const PROV=[
+["Abruzzo",[["Chieti","CH"],["L'Aquila","AQ"],["Pescara","PE"],["Teramo","TE"]]],
+["Basilicata",[["Matera","MT"],["Potenza","PZ"]]],
+["Calabria",[["Catanzaro","CZ"],["Cosenza","CS"],["Crotone","KR"],["Reggio Calabria","RC"],["Vibo Valentia","VV"]]],
+["Campania",[["Avellino","AV"],["Benevento","BN"],["Caserta","CE"],["Napoli","NA"],["Salerno","SA"]]],
+["Emilia-Romagna",[["Bologna","BO"],["Ferrara","FE"],["Forlì-Cesena","FC"],["Modena","MO"],["Parma","PR"],["Piacenza","PC"],["Ravenna","RA"],["Reggio Emilia","RE"],["Rimini","RN"]]],
+["Friuli-Venezia Giulia",[["Gorizia","GO"],["Pordenone","PN"],["Trieste","TS"],["Udine","UD"]]],
+["Lazio",[["Frosinone","FR"],["Latina","LT"],["Rieti","RI"],["Roma","RM"],["Viterbo","VT"]]],
+["Liguria",[["Genova","GE"],["Imperia","IM"],["La Spezia","SP"],["Savona","SV"]]],
+["Lombardia",[["Bergamo","BG"],["Brescia","BS"],["Como","CO"],["Cremona","CR"],["Lecco","LC"],["Lodi","LO"],["Mantova","MN"],["Milano","MI"],["Monza e Brianza","MB"],["Pavia","PV"],["Sondrio","SO"],["Varese","VA"]]],
+["Marche",[["Ancona","AN"],["Ascoli Piceno","AP"],["Fermo","FM"],["Macerata","MC"],["Pesaro e Urbino","PU"]]],
+["Molise",[["Campobasso","CB"],["Isernia","IS"]]],
+["Piemonte",[["Alessandria","AL"],["Asti","AT"],["Biella","BI"],["Cuneo","CN"],["Novara","NO"],["Torino","TO"],["Verbano-Cusio-Ossola","VB"],["Vercelli","VC"]]],
+["Puglia",[["Bari","BA"],["Barletta-Andria-Trani","BT"],["Brindisi","BR"],["Foggia","FG"],["Lecce","LE"],["Taranto","TA"]]],
+["Sardegna",[["Cagliari","CA"],["Nuoro","NU"],["Oristano","OR"],["Sassari","SS"],["Sud Sardegna","SU"]]],
+["Sicilia",[["Agrigento","AG"],["Caltanissetta","CL"],["Catania","CT"],["Enna","EN"],["Messina","ME"],["Palermo","PA"],["Ragusa","RG"],["Siracusa","SR"],["Trapani","TP"]]],
+["Toscana",[["Arezzo","AR"],["Firenze","FI"],["Grosseto","GR"],["Livorno","LI"],["Lucca","LU"],["Massa-Carrara","MS"],["Pisa","PI"],["Pistoia","PT"],["Prato","PO"],["Siena","SI"]]],
+["Trentino-Alto Adige",[["Bolzano","BZ"],["Trento","TN"]]],
+["Umbria",[["Perugia","PG"],["Terni","TR"]]],
+["Valle d'Aosta",[["Aosta","AO"]]],
+["Veneto",[["Belluno","BL"],["Padova","PD"],["Rovigo","RO"],["Treviso","TV"],["Venezia","VE"],["Verona","VR"],["Vicenza","VI"]]],
+];
+const ALL_PROV=PROV.flatMap(([r,ps])=>ps.map(([n])=>n));
+const REGIONS=PROV.map(([r])=>r);
+const DEF_CLIMA=[["Mono 9",400],["Mono 12",400],["Mono 18",600],["Mono 24",600],["Dual 9+9",800],["Dual 9+12",800],["Dual 12+12",800],["Trial 9+9+9",1000],["Trial 9+9+12",1000],["Trial 12+12+12",1000],["Quadri 9+9+9+9",1200],["Quadri 9+9+9+12",1200]].map(([config,compenso])=>({config,compenso}));
+const DEF_TERM=[["Armonia 24","Caldaia",900],["Armonia 28","Caldaia",900],["Armonia 32","Caldaia",900],["Armonia Small 24","Caldaia",900],["Armonia Extra 24 Est.","Caldaia",900],["Armonia Extra 28 Est.","Caldaia",900],["Sinergia 24/6 (Ibrido)","Ibrido",1500],["Sinergia 28/9 (Ibrido)","Ibrido",1500],["Sinergia 34/12 (Ibrido)","Ibrido",1500],["Aquatech Murale 80 LT","Scaldacqua",600],["Aquatech Murale 120 LT","Scaldacqua",600],["Aquatech Basamento 200 LT","Scaldacqua",600],["Aquatech Basamento 300 LT","Scaldacqua",600],["Aquacare (addolcitore)","Acqua",500],["Bubble (frigogasatore)","Acqua",500],["Altro termico","—",0]].map(([prodotto,tipo,compenso])=>({prodotto,tipo,compenso}));
+const DEF_EXTRA=[["Sopralluogo",null,100],["Videoispezione canna fumaria",null,150],["Intubaggio canna fumaria (al m)",null,80],["Canna fumaria esterna (al m)",null,80],["Neutralizzazione condensa",null,80],["Pompa scarico condensa",100,150],["Modifica impianto (basam.→murale)",null,500],["Valvola termostatica (cad.)",null,90],["Canalina esterna (al m)",80,null],["Foro mattone (≥40 cm)",80,80],["Foro soletta",190,190],["Foro cappotto termico",190,190],["Foro pietra/sasso",220,220],["Ponteggio",300,300],["Cesta idraulica",450,450],["Suolo pubblico",300,300]].map(([voce,clima,termico])=>({voce,clima,termico}));
+const PREP=["Da brandizzare","Brandizzato","Imballato","Pronto consegna"];
+const CONSEGNA=["Corriere","Consegno io","Ritiro installatore"];
+const RUOLI=["Capo Area","Consulente vendita"];
+const FASI=["Da assegnare","Assegnato","Pronto consegna","Consegnato","Installato","RECESSO"];
+const FCLASS=f=>"ph-"+String(f).replace(/[^A-Za-z]/g,"");
+const LOGO="data:image/jpeg;base64,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";
+
+/* ---------- utils ---------- */
+const uid=()=>Math.random().toString(36).slice(2,10);
+const eur=n=>"€ "+(Math.round(n||0)).toLocaleString("it-IT");
+const today=()=>new Date().toISOString().slice(0,10);
+const addDays=(d,n)=>{if(!d)return"";const x=new Date(d+"T00:00:00");x.setDate(x.getDate()+n);return x.toISOString().slice(0,10);};
+const fmtD=d=>d?d.split("-").reverse().join("/"):"";
+const diffDays=(a,b)=>Math.round((new Date(a+"T00:00:00")-new Date(b+"T00:00:00"))/864e5);
+
+/* ---------- storage ---------- */
+const KEY="arquati_gestione_v1";
+const seed={
+  clienti:[{id:uid(),nome:"Verdi Costruzioni S.r.l.",referente:"Anna Verdi",tel:"333 1112223",email:"ordini@verdicostr.it",indirizzo:"Via Roma 10, Milano",provincia:"Milano",cap:"20100",note:"Esempio"}],
+  installatori:[{id:uid(),nome:"Rossi Impianti S.r.l.",referente:"Marco Rossi",tel:"345 1234567",email:"info@rossimpianti.it",regioni:["Lombardia","Piemonte"],piva:"01234567890"},{id:uid(),nome:"Bianchi Pose di G. Bianchi",referente:"Giulia Bianchi",tel:"348 7654321",email:"g.bianchi@pec.it",regioni:["Veneto","Friuli-Venezia Giulia","Trentino-Alto Adige"],piva:"09876543210"}],
+  consulenti:[{id:uid(),nome:"Paolo Conti",ruolo:"Capo Area",capoArea:"",tel:"340 1112233",email:"p.conti@arquati.it",regioni:["Piemonte","Lombardia","Liguria"]},{id:uid(),nome:"Luca Neri",ruolo:"Consulente vendita",capoArea:"Paolo Conti",tel:"345 2223344",email:"l.neri@arquati.it",regioni:["Lombardia"]},{id:uid(),nome:"Sara Gallo",ruolo:"Consulente vendita",capoArea:"Paolo Conti",tel:"346 3334455",email:"s.gallo@arquati.it",regioni:["Veneto"]}],
+  zoneMap:{Milano:["Rossi Impianti S.r.l."]},
+  tariffe:{clima:DEF_CLIMA,termico:DEF_TERM,extra:DEF_EXTRA},
+  pose:[]
+};
+function migrate(d){
+  if(!d||typeof d!=="object")return d;
+  if(d.zoneMap){const m={};Object.entries(d.zoneMap).forEach(([k,v])=>{m[k]=Array.isArray(v)?v.filter(Boolean):(v?[v]:[]);});d.zoneMap=m;}
+  return d;
+}
+function load(){
+  try{const s=localStorage.getItem(KEY);if(s)return migrate(JSON.parse(s));}catch(e){}
+  return JSON.parse(JSON.stringify(seed));
+}
+function persist(db){try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){alert("Memoria del browser piena: fai un backup ed elimina qualcosa.");}}
+
+/* ---------- sincronizzazione cloud (Supabase REST) ---------- */
+const CKEY="arquati_cloud";
+function loadCloud(){try{return Object.assign({url:"",key:"",auto:false},JSON.parse(localStorage.getItem(CKEY)||"{}"));}catch(e){return {url:"",key:"",auto:false};}}
+function saveCloud(c){try{localStorage.setItem(CKEY,JSON.stringify(c));}catch(e){}}
+const cloudOn=c=>!!(c&&c.url&&c.key);
+async function cloudPushData(cfg,data){
+  const h={apikey:cfg.key,Authorization:"Bearer "+cfg.key,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"};
+  const r=await fetch(cfg.url.replace(/\/+$/,"")+"/rest/v1/app_state",{method:"POST",headers:h,body:JSON.stringify([{id:1,data:data,updated_at:new Date().toISOString()}])});
+  if(!r.ok)throw new Error("HTTP "+r.status+" — "+(await r.text()).slice(0,140));
+}
+async function cloudPullData(cfg){
+  const h={apikey:cfg.key,Authorization:"Bearer "+cfg.key};
+  const r=await fetch(cfg.url.replace(/\/+$/,"")+"/rest/v1/app_state?id=eq.1&select=data,updated_at",{headers:h});
+  if(!r.ok)throw new Error("HTTP "+r.status);
+  const j=await r.json();return (j&&j[0])?j[0]:null;
+}
+
+/* ---------- file allegati (IndexedDB) ---------- */
+const IDB="arquati_files",STORE="files";
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open(IDB,1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(STORE))r.result.createObjectStore(STORE);};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function filePut(id,blob){const d=await idb();return new Promise((res,rej)=>{const t=d.transaction(STORE,"readwrite");t.objectStore(STORE).put(blob,id);t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});}
+async function fileGet(id){const d=await idb();return new Promise((res,rej)=>{const t=d.transaction(STORE,"readonly");const q=t.objectStore(STORE).get(id);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);});}
+async function fileDel(id){const d=await idb();return new Promise((res)=>{const t=d.transaction(STORE,"readwrite");t.objectStore(STORE).delete(id);t.oncomplete=()=>res();t.onerror=()=>res();});}
+
+/* ---------- calcolo pose ---------- */
+function compute(p,db){
+  const cli=db.clienti.find(c=>c.id===p.clienteId);
+  const provincia=cli?cli.provincia:"";
+  const zval=db.zoneMap[provincia];
+  const consigliati=Array.isArray(zval)?zval.filter(Boolean):(zval?[zval]:[]);
+  const consigliato=consigliati[0]||"";        // primo suggerito dalla zona
+  const effInst=p.installatore||"";               // installatore scelto (auto-compilato dalla zona)
+  const climaList=[p.clima1,p.clima2,p.clima3,p.clima4].filter(Boolean);
+  const ambito=climaList.length?"Climatizzatore":(p.termico?"Termico":"");
+  const compClima=climaList.reduce((s,cf)=>{const t=db.tariffe.clima.find(x=>x.config===cf);return s+(t?+t.compenso:0);},0);
+  const tt=db.tariffe.termico.find(x=>x.prodotto===p.termico);
+  const compensoStd=compClima+(tt?+tt.compenso:0);
+  const slots=[[p.ex1,p.q1],[p.ex2,p.q2],[p.ex3,p.q3]];
+  let extraTot=slots.reduce((s,[v,q])=>{
+    if(!v)return s;const e=db.tariffe.extra.find(x=>x.voce===v);if(!e)return s;
+    const pr=ambito==="Termico"?(e.termico||0):(e.clima||0);
+    return s+(Number(q)||1)*pr;
+  },0)+(Number(p.altriExtra)||0);
+  const recesso=p.recesso==="Recesso";
+  const compensoInst=recesso?0:compensoStd+extraTot;
+  const scadRecesso=p.dataVendita?addDays(p.dataVendita,15):"";
+  let fase="";
+  if(!p.clienteId&&!p.nContratto)fase="";
+  else if(recesso)fase="RECESSO";
+  else if(p.dataInstallazione)fase="Installato";
+  else if(!effInst)fase="Da assegnare";
+  else if(p.dataConsegna)fase="Consegnato";
+  else if(p.preparazione==="Pronto consegna")fase="Pronto consegna";
+  else fase="Assegnato";
+  const daPian=!p.dataInstallazione&&!p.dataPrevista&&["Assegnato","Pronto consegna","Consegnato"].includes(fase);
+  return {provincia,consigliato,consigliati,effInst,ambito,climaList,compensoStd,extraTot,compensoInst,scadRecesso,fase,daPian,cliente:cli?cli.nome:"",termProd:tt};
+}
+const FASE_IDX={"Da assegnare":1,"Assegnato":2,"Pronto consegna":3,"Consegnato":4,"Installato":5,"RECESSO":0};
+
+/* ---------- app ---------- */
+function App(){
+  const [db,setDb]=useState(load);
+  const [tab,setTab]=useState("dash");
+  const [toast,setToast]=useState("");
+  const [editP,setEditP]=useState(null);
+  const [canInstall,setCanInstall]=useState(false);
+  const promptRef=useRef(null);
+  useEffect(()=>persist(db),[db]);
+  useEffect(()=>{
+    const h=e=>{e.preventDefault();promptRef.current=e;setCanInstall(true);};
+    const h2=()=>setCanInstall(false);
+    window.addEventListener("beforeinstallprompt",h);
+    window.addEventListener("appinstalled",h2);
+    return()=>{window.removeEventListener("beforeinstallprompt",h);window.removeEventListener("appinstalled",h2);};
+  },[]);
+  const doInstall=()=>{if(promptRef.current)promptRef.current.prompt();};
+  const up=fn=>setDb(d=>{const n=fn(structuredClone(d));return n;});
+  const flash=m=>{setToast(m);setTimeout(()=>setToast(""),2200);};
+  const writePose=p=>up(d=>{const i=d.pose.findIndex(x=>x.id===p.id);if(i>=0)d.pose[i]=p;else d.pose.push(p);return d;});
+  // ---- cloud sync ----
+  const [cloud,setCloud]=useState(loadCloud);
+  useEffect(()=>saveCloud(cloud),[cloud]);
+  const dbRef=useRef(db);useEffect(()=>{dbRef.current=db;});
+  const lastSync=useRef("");
+  const pushNow=async()=>{await cloudPushData(cloud,dbRef.current);lastSync.current=JSON.stringify(dbRef.current);};
+  const pullNow=async()=>{const row=await cloudPullData(cloud);if(row&&row.data){const s=JSON.stringify(row.data);if(s!==JSON.stringify(dbRef.current)){lastSync.current=s;setDb(migrate(row.data));}return row;}return null;};
+  useEffect(()=>{if(!(cloudOn(cloud)&&cloud.auto))return;pullNow().catch(()=>{});const iv=setInterval(()=>pullNow().catch(()=>{}),15000);return()=>clearInterval(iv);},[cloud.url,cloud.key,cloud.auto]);
+  useEffect(()=>{if(!(cloudOn(cloud)&&cloud.auto))return;if(JSON.stringify(db)===lastSync.current)return;const t=setTimeout(()=>pushNow().catch(()=>{}),1800);return()=>clearTimeout(t);},[db,cloud.url,cloud.key,cloud.auto]);
+  const comp=useMemo(()=>db.pose.map(p=>({p,c:compute(p,db)})),[db]);
+
+  const NAV=[["dash","Cruscotto","◧"],["pose","Pose / Lavori","▤"],["agenda","Agenda","🗓"],["clienti","Clienti","👤"],["installatori","Installatori","🔧"],["zone","Zone","🗺"],["consulenti","Consulenti","🤝"],["tariffe","Tariffe & Prodotti","€"],["backup","Backup / Excel","⤓"]];
+  const titles={dash:["Cruscotto","La sintesi operativa: numeri, fasi e programmazione."],pose:["Pose / Lavori","Registra e segui ogni contratto fino all'installazione."],agenda:["Agenda interventi","Cosa fissare e cosa è imminente."],clienti:["Clienti",""],installatori:["Installatori","Anagrafica e compensi maturati."],zone:["Zone → Installatori","Provincia per provincia."],consulenti:["Consulenti","Ruoli, venduto e recessi."],tariffe:["Tariffe & Prodotti","Compensi posa ed extra, modificabili."],backup:["Backup & Excel","Salva, ripristina, esporta."]};
+
+  return (
+    <div className="app">
+      <aside className="side">
+        <div className="brand"><img src={LOGO} alt="Arquati Eco Living" style={{width:"100%",maxWidth:200,background:"#fff",borderRadius:10,padding:"8px 10px",display:"block"}}/></div>
+        <nav className="nav">{NAV.map(([k,l,i])=>(
+          <button key={k} className={tab===k?"on":""} onClick={()=>setTab(k)}><span className="ic">{i}</span>{l}</button>
+        ))}</nav>
+        <div className="foot">Gestione Pose · dati salvati nel tuo browser</div>
+      </aside>
+      <main className="main">
+        <div className="top"><div><h1>{titles[tab][0]}</h1>{titles[tab][1]&&<div className="sub">{titles[tab][1]}</div>}</div>
+          <div style={{display:"flex",gap:8}}>
+            {canInstall&&<button className="btn gh" onClick={doInstall}>⤓ Installa app</button>}
+            {tab==="pose"&&<button className="btn" onClick={()=>setEditP(emptyPose())}>+ Nuova pratica</button>}
+          </div>
+        </div>
+        <div className="wrap">
+          {tab==="dash"&&<Dash comp={comp} db={db}/>}
+          {tab==="pose"&&<Pose comp={comp} db={db} up={up} flash={flash} openPose={setEditP}/>}
+          {tab==="agenda"&&<Agenda comp={comp} openPose={setEditP}/>}
+          {tab==="clienti"&&<Clienti db={db} comp={comp} up={up} flash={flash}/>}
+          {tab==="installatori"&&<Installatori db={db} comp={comp} up={up} flash={flash}/>}
+          {tab==="zone"&&<Zone db={db} up={up} flash={flash}/>}
+          {tab==="consulenti"&&<Consulenti db={db} comp={comp} up={up} flash={flash}/>}
+          {tab==="tariffe"&&<Tariffe db={db} up={up} flash={flash}/>}
+          {tab==="backup"&&<Backup db={db} setDb={setDb} comp={comp} flash={flash} cloud={cloud} setCloud={setCloud} pushNow={pushNow} pullNow={pullNow}/>}
+        </div>
+      </main>
+      {editP&&<PoseForm p={editP} db={db} onChange={writePose} onClose={()=>setEditP(null)}/>}
+      {toast&&<div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* ---------- Cruscotto ---------- */
+function Dash({comp,db}){
+  const rows=comp.map(x=>x.c);
+  const attive=rows.filter(c=>c.fase&&c.fase!=="RECESSO");
+  const installate=rows.filter(c=>c.fase==="Installato");
+  const recessi=rows.filter(c=>c.fase==="RECESSO");
+  const previsto=rows.reduce((s,c)=>s+c.compensoInst,0);
+  const daLiq=installate.reduce((s,c)=>s+c.compensoInst,0);
+  const vendTot=comp.reduce((s,{p,c})=>s+(c.fase?(+p.importoVendita||0):0),0);
+  const vendNet=comp.reduce((s,{p,c})=>s+((c.fase&&c.fase!=="RECESSO")?(+p.importoVendita||0):0),0);
+  const perFase=FASI.map(f=>[f,rows.filter(c=>c.fase===f).length]);
+  const daAssegnare=rows.filter(c=>c.fase==="Da assegnare").length;
+  const daPian=rows.filter(c=>c.daPian).length;
+  const t=today();
+  const prossimi=comp.filter(({p,c})=>p.dataPrevista&&!p.dataInstallazione&&p.dataPrevista>=t&&diffDays(p.dataPrevista,t)<=7).length;
+  const recAperto=comp.filter(({p,c})=>c.scadRecesso&&!p.dataInstallazione&&c.fase!=="RECESSO"&&c.scadRecesso>=t).length;
+  const saldati=comp.filter(({p,c})=>p.saldato==="Sì"&&!p.dataInstallazione&&c.fase!=="RECESSO").length;
+  // mesi
+  const mesi=Array.from({length:12},(_,m)=>{
+    const ym=`2026-${String(m+1).padStart(2,"0")}`;
+    const vend=comp.filter(({p})=>p.dataVendita&&p.dataVendita.slice(0,7)===ym);
+    const inst=comp.filter(({p})=>p.dataInstallazione&&p.dataInstallazione.slice(0,7)===ym);
+    return {m:["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"][m],
+      pv:vend.length,vend:vend.reduce((s,{p})=>s+(+p.importoVendita||0),0),
+      ni:inst.length,ci:inst.reduce((s,{c})=>s+c.compensoInst,0)};
+  });
+  const maxCi=Math.max(1,...mesi.map(x=>x.ci));
+  const KPI=(l,v,cl)=>(<div className={"kpi "+(cl||"")}><div className="lab">{l}</div><div className="val mono">{v}</div></div>);
+  return (<>
+    <div className="grid kpis" style={{marginBottom:16}}>
+      {KPI("Pose totali",rows.filter(c=>c.fase).length)}
+      {KPI("Pose attive",attive.length)}
+      {KPI("Installate",installate.length)}
+      {KPI("Recessi",recessi.length,"warn")}
+      {KPI("Compenso installatori previsto",eur(previsto),"euro")}
+      {KPI("Da liquidare (installati)",eur(daLiq),"euro")}
+      {KPI("Venduto totale",eur(vendTot),"euro")}
+      {KPI("Venduto netto (no recessi)",eur(vendNet),"euro")}
+    </div>
+    <div className="two" style={{marginBottom:16}}>
+      <div className="card"><h3>Pose per fase</h3><div className="bd">
+        {perFase.map(([f,n])=>(<div key={f} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0"}}>
+          <span className={"pill "+FCLASS(f)}>{f}</span><div style={{flex:1}}/><b className="mono" style={{fontSize:16}}>{n}</b></div>))}
+      </div></div>
+      <div className="card"><h3>Programmazione interventi</h3><div className="bd">
+        {[["Da assegnare (serve installatore)",daAssegnare,"#E2E2E2"],["Da programmare (assegnate, senza data)",daPian,"#FFF3D6"],["Pose previste nei prossimi 7 gg",prossimi,"#DCEBD4"],["Recesso ancora aperto",recAperto,"#FCE9CC"],["Saldati, da installare",saldati,"#E1E9F5"]].map(([l,v,bg])=>(
+          <div key={l} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0"}}>
+            <span style={{width:12,height:12,borderRadius:4,background:bg,display:"inline-block"}}/><span>{l}</span><div style={{flex:1}}/><b className="mono" style={{fontSize:18}}>{v}</b></div>))}
+      </div></div>
+    </div>
+    <div className="card"><h3>Andamento 2026 <span className="hint">vendite · installazioni · compenso installato</span></h3><div className="bd">
+      <div className="tbl-wrap" style={{boxShadow:"none",border:0}}><table>
+        <thead><tr><th>Mese</th><th className="num">Pose vendute</th><th className="num">Venduto</th><th className="num">Installate</th><th className="num">Compenso installato</th><th style={{width:160}}></th></tr></thead>
+        <tbody>{mesi.map(x=>(<tr key={x.m}><td>{x.m}</td><td className="num">{x.pv||""}</td><td className="num eur">{x.vend?eur(x.vend):""}</td><td className="num">{x.ni||""}</td><td className="num eur">{x.ci?eur(x.ci):""}</td>
+          <td><div className="bar"><div className="fill" style={{width:(x.ci/maxCi*100)+"%"}}/></div></td></tr>))}
+          <tr style={{fontWeight:700}}><td>Totale</td><td className="num">{mesi.reduce((s,x)=>s+x.pv,0)}</td><td className="num eur">{eur(mesi.reduce((s,x)=>s+x.vend,0))}</td><td className="num">{mesi.reduce((s,x)=>s+x.ni,0)}</td><td className="num eur">{eur(mesi.reduce((s,x)=>s+x.ci,0))}</td><td></td></tr>
+        </tbody></table></div>
+    </div></div>
+  </>);
+}
+
+/* ---------- Agenda ---------- */
+function Agenda({comp,openPose}){
+  const t=today();
+  const daAssegnare=comp.filter(({c})=>c.fase==="Da assegnare");
+  const daPian=comp.filter(({c})=>c.daPian);
+  const prog=comp.filter(({p,c})=>p.dataPrevista&&!p.dataInstallazione&&c.fase!=="RECESSO"&&c.effInst).sort((a,b)=>a.p.dataPrevista.localeCompare(b.p.dataPrevista));
+  const eseguite=comp.filter(({c})=>c.fase==="Installato").sort((a,b)=>(b.p.dataInstallazione||"").localeCompare(a.p.dataInstallazione||""));
+  const recessi=comp.filter(({c})=>c.fase==="RECESSO");
+  const Card=({title,items,dateGet,dateHdr})=>(
+    <div className="card"><h3>{title} <span className="tag">{items.length}</span></h3>
+      <div className="tbl-wrap" style={{boxShadow:"none",border:0}}>
+      {items.length===0?<div className="empty"><div className="hint">Niente qui per ora.</div></div>:
+      <table><thead><tr><th>Contratto</th><th>Cliente</th><th>Prov.</th><th>Installatore</th><th>Prodotti</th>{dateGet&&<th>{dateHdr}</th>}<th>Fase</th></tr></thead>
+      <tbody>{items.map(({p,c})=>{
+        const prods=[...c.climaList,p.termico].filter(Boolean).join(" · ");
+        const dv=dateGet?dateGet(p):"";
+        const imm=dateHdr==="Data prevista"&&dv&&dv>=t&&diffDays(dv,t)<=7;
+        return(<tr key={p.id} onClick={()=>openPose(structuredClone(p))} style={{cursor:"pointer"}}><td><b>{p.nContratto}</b></td><td>{c.cliente}</td><td>{c.provincia}</td>
+          <td>{c.effInst||<span className="miss">— da assegnare</span>}</td><td className="hint">{prods}</td>
+          {dateGet&&<td className="mono">{fmtD(dv)} {imm&&<span className="flag">tra {diffDays(dv,t)}g</span>}</td>}
+          <td><span className={"pill "+FCLASS(c.fase)}>{c.fase}</span></td></tr>);
+      })}</tbody></table>}
+      </div></div>
+  );
+  return (<div className="grid" style={{gap:16}}>
+    <div className="hint" style={{marginTop:-4}}>Tocca una riga per aprire la pratica.</div>
+    <Card title="Da assegnare — serve scegliere l'installatore" items={daAssegnare}/>
+    <Card title="Da programmare — assegnate, senza data" items={daPian}/>
+    <Card title="Programmate — per data prevista" items={prog} dateGet={p=>p.dataPrevista} dateHdr="Data prevista"/>
+    <Card title="Posa eseguita — installate" items={eseguite} dateGet={p=>p.dataInstallazione} dateHdr="Data installazione"/>
+    <Card title="Recessi" items={recessi}/>
+  </div>);
+}
+
+/* ---------- POSE ---------- */
+const emptyPose=()=>({id:uid(),nContratto:"",clienteId:"",consulente:"",dataApp:"",clima1:"",clima2:"",clima3:"",clima4:"",termico:"",importoVendita:"",installatore:"",dataVendita:"",recesso:"",preparazione:"",modalitaConsegna:"",dataConsegna:"",dataPrevista:"",dataInstallazione:"",ex1:"",q1:"",ex2:"",q2:"",ex3:"",q3:"",altriExtra:"",saldato:"",note:"",link:""});
+function Pose({comp,db,up,flash,openPose}){
+  const [q,setQ]=useState("");const [ff,setFf]=useState("");const [fi,setFi]=useState("");
+  const totByContr=useMemo(()=>{const m={};comp.forEach(({p,c})=>{m[p.nContratto]=(m[p.nContratto]||0)+c.compensoInst;});return m;},[comp]);
+  let rows=comp;
+  if(q){const s=q.toLowerCase();rows=rows.filter(({p,c})=>(p.nContratto+" "+c.cliente+" "+c.effInst).toLowerCase().includes(s));}
+  if(ff)rows=rows.filter(({c})=>c.fase===ff);
+  if(fi)rows=rows.filter(({c})=>c.effInst===fi);
+  const del=id=>{if(confirm("Eliminare questa pratica?")){const pz=comp.find(x=>x.p.id===id);if(pz)(pz.p.files||[]).forEach(f=>{try{fileDel(f.id);}catch(e){}});up(d=>{d.pose=d.pose.filter(x=>x.id!==id);return d;});flash("Pratica eliminata");}};
+  return(<>
+    <div className="filters">
+      <input placeholder="Cerca contratto, cliente, installatore…" value={q} onChange={e=>setQ(e.target.value)} style={{minWidth:260}}/>
+      <select value={ff} onChange={e=>setFf(e.target.value)}><option value="">Tutte le fasi</option>{FASI.map(f=>(<option key={f}>{f}</option>))}</select>
+      <select value={fi} onChange={e=>setFi(e.target.value)}><option value="">Tutti gli installatori</option>{db.installatori.map(i=>(<option key={i.id}>{i.nome}</option>))}</select>
+      <div style={{flex:1}}/><span className="hint">{rows.length} pratiche</span>
+    </div>
+    <div className="tbl-wrap">
+      {rows.length===0?<div className="empty"><div className="big">Nessuna pratica</div><div className="hint">Premi “Nuova pratica” per iniziare.</div></div>:
+      <table><thead><tr><th>Contratto</th><th>Cliente</th><th>Prov.</th><th>Prodotti</th><th>Consulente</th><th>Installatore</th><th>Fase</th><th className="num">Compenso</th><th className="num">Tot. contratto</th><th>Da progr.</th><th></th></tr></thead>
+      <tbody>{rows.map(({p,c})=>{
+        const prods=[...c.climaList,p.termico].filter(Boolean);
+        return(<tr key={p.id} onClick={()=>openPose(structuredClone(p))} style={{cursor:"pointer"}}>
+          <td><b>{p.nContratto||"—"}</b>{p.files&&p.files.length>0&&<span title={p.files.length+" allegati"} style={{marginLeft:5}}>📎{p.files.length}</span>}</td><td>{c.cliente}</td><td>{c.provincia}</td>
+          <td className="hint">{prods.length?prods.map((x,i)=>(<span key={i} className={"tag "+(c.ambito==="Termico"?"warm":"")} style={{marginRight:4}}>{x}</span>)):"—"}</td>
+          <td>{p.consulente}</td><td>{c.effInst||<span className="miss">—</span>}</td>
+          <td><span className={"pill "+FCLASS(c.fase)}>{c.fase||"—"}</span></td>
+          <td className="num eur">{c.fase?eur(c.compensoInst):""}</td>
+          <td className="num eur">{p.nContratto?eur(totByContr[p.nContratto]):""}</td>
+          <td>{c.daPian&&<span className="flag">SÌ</span>}</td>
+          <td onClick={e=>{e.stopPropagation();del(p.id);}}><button className="btn link">✕</button></td>
+        </tr>);
+      })}</tbody></table>}
+    </div>
+    <div className="legend">{FASI.map(f=>(<span key={f}><span className={"sw "+FCLASS(f)}/>{f}</span>))}</div>
+  </>);
+}
+
+function RegionSelect({value,onChange}){
+  const sel=value||[];const avail=REGIONS.filter(r=>!sel.includes(r));
+  return(<div>
+    {sel.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
+      {sel.map(r=>(<span key={r} className="tag" style={{display:"inline-flex",gap:6,alignItems:"center"}}>{r}<span onClick={()=>onChange(sel.filter(x=>x!==r))} style={{cursor:"pointer",fontWeight:700}}>✕</span></span>))}
+    </div>}
+    <select value="" onChange={e=>{if(e.target.value)onChange([...sel,e.target.value]);}}><option value="">+ aggiungi regione…</option>{avail.map(r=>(<option key={r}>{r}</option>))}</select>
+  </div>);
+}
+const SUN='<svg width="34" height="34" viewBox="0 0 34 34"><g stroke="#E4532B" stroke-width="1.4" stroke-linecap="round">'+Array.from({length:12},(_,i)=>{const a=i*Math.PI/6,c=17;return '<line x1="'+(c+Math.cos(a)*11)+'" y1="'+(c+Math.sin(a)*11)+'" x2="'+(c+Math.cos(a)*15)+'" y2="'+(c+Math.sin(a)*15)+'"/>';}).join('')+'</g><circle cx="17" cy="17" r="8" fill="#E4532B"/></svg>';
+function printHTML(title,body){
+  const css='<style>@page{margin:16mm}body{font-family:Arial,Helvetica,sans-serif;color:#18231C;font-size:12.5px;line-height:1.5}h1{font-family:Arial;font-size:20px;margin:0}.hd{display:flex;align-items:center;gap:10px;border-bottom:3px solid #4F8A52;padding-bottom:10px;margin-bottom:16px}.hd .b{font-size:11px;letter-spacing:.25em;color:#356B41}table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #cfd8cd;padding:6px 9px;text-align:left;vertical-align:top}th{background:#EEF2EC;width:34%}.sec{font-weight:700;color:#356B41;text-transform:uppercase;font-size:11px;letter-spacing:.06em;margin:16px 0 4px;border-bottom:1px solid #DCE4DA;padding-bottom:3px}.sign{margin-top:36px;display:flex;gap:40px}.sign div{flex:1;border-top:1px solid #333;padding-top:5px;font-size:11px;color:#555}.muted{color:#6C7A70}@media print{.noprint{display:none}}</style>';
+  const w=window.open("","_blank");if(!w){alert("Consenti i popup per stampare.");return;}
+  w.document.write('<!doctype html><html lang="it"><head><meta charset="utf-8"><title>'+title+'</title>'+css+'</head><body><div class="hd"><img src="'+LOGO+'" style="height:46px"><div><h1>'+title+'</h1></div></div>'+body+'<div class="noprint" style="margin-top:24px"><button onclick="window.print()" style="padding:9px 16px;font-size:14px">Stampa</button></div></body></html>');
+  w.document.close();w.focus();setTimeout(()=>{try{w.print();}catch(e){}},350);
+}
+function schedaIntervento(p,db,c){
+  const cli=db.clienti.find(x=>x.id===p.clienteId)||{};
+  const prods=[p.clima1,p.clima2,p.clima3,p.clima4,p.termico].filter(Boolean);
+  const extras=[[p.ex1,p.q1],[p.ex2,p.q2],[p.ex3,p.q3]].filter(x=>x[0]).map(x=>x[0]+(x[1]?(" × "+x[1]):""));
+  const tel=db.installatori.find(x=>x.nome===c.effInst);
+  const row=(k,v)=>'<tr><th>'+k+'</th><td>'+(v||'<span class="muted">—</span>')+'</td></tr>';
+  const body='<div class="sec">Pratica</div><table>'+
+    row("N. contratto","<b>"+(p.nContratto||"")+"</b>")+row("Fase",c.fase)+row("Data appuntamento",fmtD(p.dataApp))+row("Consulente",p.consulente)+'</table>'+
+    '<div class="sec">Cliente</div><table>'+row("Cliente","<b>"+(cli.nome||"")+"</b>")+row("Referente",cli.referente)+row("Telefono",cli.tel)+row("Indirizzo",(cli.indirizzo||"")+(cli.cap?(" — "+cli.cap):"")+(cli.provincia?(" ("+cli.provincia+")"):""))+'</table>'+
+    '<div class="sec">Impianto</div><table>'+row("Prodotti",prods.join("<br>"))+row("Ambito",c.ambito)+row("Extra",extras.join("<br>"))+'</table>'+
+    '<div class="sec">Installazione</div><table>'+row("Installatore","<b>"+(c.effInst||"da assegnare")+"</b>"+(tel&&tel.tel?(" — "+tel.tel):""))+row("Consegna",p.modalitaConsegna)+row("Data consegna",fmtD(p.dataConsegna))+row("Data posa prevista","<b>"+fmtD(p.dataPrevista)+"</b>")+row("Data installazione",fmtD(p.dataInstallazione))+'</table>'+
+    '<div class="sec">Compenso installatore</div><table>'+row("Compenso posa",eur(c.compensoStd))+row("Extra",eur(c.extraTot))+row("Totale",("<b>"+ (c.fase==="RECESSO"?"€ 0 (recesso)":eur(c.compensoInst)) +"</b>"))+'</table>'+
+    (p.note?('<div class="sec">Note</div><div>'+p.note.replace(/</g,"&lt;")+'</div>'):'')+
+    '<div class="sign"><div>Firma installatore</div><div>Firma cliente</div></div>';
+  printHTML("Scheda Intervento "+(p.nContratto||""),body);
+}
+function schedaCliente(cli,db,comp){
+  const mine=comp.filter(({p})=>p.clienteId===cli.id);
+  const row=(k,v)=>'<tr><th>'+k+'</th><td>'+(v||'<span class="muted">—</span>')+'</td></tr>';
+  let body='<div class="sec">Anagrafica</div><table>'+row("Cliente","<b>"+(cli.nome||"")+"</b>")+row("Referente",cli.referente)+row("Telefono",cli.tel)+row("Email",cli.email)+row("Indirizzo",(cli.indirizzo||"")+(cli.cap?(" — "+cli.cap):""))+row("Provincia",cli.provincia)+'</table>';
+  body+='<div class="sec">Pratiche ('+mine.length+')</div>';
+  if(mine.length){body+='<table><tr><th style="width:auto">Contratto</th><th style="width:auto">Prodotti</th><th style="width:auto">Fase</th><th style="width:auto">Installatore</th><th style="width:auto">Prevista</th></tr>'+
+    mine.map(({p,c})=>'<tr><td>'+(p.nContratto||"")+'</td><td>'+[...c.climaList,p.termico].filter(Boolean).join(", ")+'</td><td>'+c.fase+'</td><td>'+(c.effInst||"—")+'</td><td>'+fmtD(p.dataPrevista)+'</td></tr>').join("")+'</table>';
+  }else body+='<div class="muted">Nessuna pratica.</div>';
+  printHTML("Scheda Cliente — "+(cli.nome||""),body);
+}
+function Attachments({files,onAdd,onRemove}){
+  const [urls,setUrls]=useState({});
+  useEffect(()=>{let alive=true;(async()=>{const made={};for(const f of files){if(!urls[f.id]){try{const b=await fileGet(f.id);if(b)made[f.id]=URL.createObjectURL(b);}catch(e){}}}if(alive&&Object.keys(made).length)setUrls(u=>({...u,...made}));})();return()=>{alive=false;};},[files]);
+  const pick=e=>{const fs=[...e.target.files];if(fs.length)onAdd(fs);e.target.value="";};
+  return(<div>
+    {files&&files.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:9}}>
+      {files.map(f=>{const u=urls[f.id];const img=(f.type||"").startsWith("image");const vid=(f.type||"").startsWith("video");
+        return(<div key={f.id} className="att">
+          {img&&u?<img src={u} onClick={()=>window.open(u,"_blank")}/>:<div className="attv" onClick={()=>u&&window.open(u,"_blank")}>{vid?"🎬":"📄"}</div>}
+          <div className="attname" title={f.name}>{f.name}</div>
+          <button type="button" className="attx" title="Rimuovi" onClick={()=>onRemove(f)}>✕</button>
+        </div>);})}
+    </div>}
+    <label className="btn gh sm" style={{cursor:"pointer",display:"inline-flex"}}>+ Carica foto/video
+      <input type="file" accept="image/*,video/*" multiple capture="environment" style={{display:"none"}} onChange={pick}/></label>
+    <div className="hint" style={{marginTop:5}}>Salvati in questo dispositivo. Per la copia di sicurezza usa «Backup completo (ZIP)».</div>
+  </div>);
+}
+function DateField({value,onChange}){
+  const ref=useRef();
+  return(<div style={{display:"flex",gap:6,alignItems:"center"}}>
+      <input ref={ref} type="date" value={value||""} onChange={e=>onChange(e.target.value)} style={{flex:1}}/>
+      <button type="button" className="btn gh sm" style={{opacity:value?1:.4}} onClick={()=>{onChange("");if(ref.current)ref.current.value="";}}>Svuota</button>
+    </div>);
+}
+function PoseForm({p,db,onChange,onClose}){
+  const [f,setF]=useState(p);
+  const c=useMemo(()=>compute(f,db),[f,db]);
+  const set=(k,v)=>{const nf={...f,[k]:v};setF(nf);onChange(nf);};
+  const climaOpts=db.tariffe.clima.map(x=>x.config);
+  const termOpts=db.tariffe.termico.map(x=>x.prodotto);
+  const extraOpts=db.tariffe.extra.map(x=>x.voce);
+  const F=(label,k,type="text",opts=null,props={})=>(
+    <div className="fld"><label>{label}</label>
+      {opts?<select value={f[k]||""} onChange={e=>set(k,e.target.value)}><option value=""></option>{opts.map(o=>(<option key={o}>{o}</option>))}</select>
+      :type==="textarea"?<textarea rows={2} value={f[k]||""} onChange={e=>set(k,e.target.value)}/>
+      :type==="date"?<DateField value={f[k]} onChange={v=>set(k,v)}/>
+      :<input type={type} value={f[k]||""} onChange={e=>set(k,e.target.value)} {...props}/>}
+    </div>);
+  const Slot=(n)=>(<div className="slotrow"><div className="fld"><label>Extra {n}</label>
+    <select value={f["ex"+n]||""} onChange={e=>set("ex"+n,e.target.value)}><option value=""></option>{extraOpts.map(o=>(<option key={o}>{o}</option>))}</select></div>
+    <div className="fld"><label>Q.tà</label><input type="number" min="0" value={f["q"+n]||""} onChange={e=>set("q"+n,e.target.value)}/></div></div>);
+  const idx=FASE_IDX[c.fase]||0;
+  return(<div className="ovl" onClick={e=>{if(e.target.classList.contains("ovl"))onClose();}}>
+    <div className="modal">
+      <div className="hd"><div><h2>{p.nContratto?"Pratica "+p.nContratto:"Nuova pratica"}</h2>
+        <div className="pipe">{[1,2,3,4,5].map(i=>(<div key={i} className="st" style={{background:i<=idx&&c.fase!=="RECESSO"?"var(--brand)":(c.fase==="RECESSO"?"var(--f-rec)":"#E3E9E1")}}/>))}</div></div>
+        <button className="x" onClick={onClose}>×</button></div>
+      <div className="bd"><div className="form">
+        <div className="sec">Pratica</div>
+        {F("N. contratto","nContratto")}
+        <div className="fld"><label>Cliente</label><select value={f.clienteId} onChange={e=>{const v=e.target.value;const cl=db.clienti.find(x=>x.id===v);const zv=db.zoneMap[cl?cl.provincia:""];const lst=Array.isArray(zv)?zv.filter(Boolean):(zv?[zv]:[]);const nf={...f,clienteId:v};if(lst[0]&&!f.installatore)nf.installatore=lst[0];setF(nf);onChange(nf);}}><option value=""></option>{db.clienti.map(x=>(<option key={x.id} value={x.id}>{x.nome}</option>))}</select></div>
+        <div className="fld"><label>Provincia (auto)</label><input value={c.provincia} disabled/></div>
+        <div className="fld"><label>Consulente</label><select value={f.consulente||""} onChange={e=>set("consulente",e.target.value)}><option value=""></option>{db.consulenti.map(x=>(<option key={x.id}>{x.nome}</option>))}</select></div>
+        {F("Data appuntamento (call center)","dataApp","date")}
+        {F("Importo vendita €","importoVendita","number")}
+
+        <div className="sec">Prodotti venduti (stessa posa)</div>
+        {F("Config. Clima 1","clima1","text",climaOpts)}
+        {F("Config. Clima 2","clima2","text",climaOpts)}
+        {F("Config. Clima 3","clima3","text",climaOpts)}
+        {F("Config. Clima 4","clima4","text",climaOpts)}
+        {F("Prodotto Termico / Caldaie","termico","text",termOpts)}
+        <div className="fld"><label>Ambito (auto)</label><input value={c.ambito} disabled/></div>
+
+        <div className="sec">Installatore & consegna</div>
+        <div className="fld full"><label>Installatore</label>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+            <select value={f.installatore||""} onChange={e=>set("installatore",e.target.value)} style={{flex:1,minWidth:180}}>
+              <option value="">— nessuno (da assegnare) —</option>
+              {c.consigliati&&c.consigliati.length>0&&<optgroup label={"Di zona ("+(c.provincia||"—")+")"}>{c.consigliati.map(nm=>(<option key={"z"+nm}>{nm}</option>))}</optgroup>}
+              <optgroup label="Tutti gli installatori">{db.installatori.filter(x=>!(c.consigliati||[]).includes(x.nome)).map(x=>(<option key={x.id}>{x.nome}</option>))}</optgroup>
+            </select>
+            <button type="button" className="btn gh sm" style={{opacity:f.installatore?1:.4}} onClick={()=>set("installatore","")}>Svuota</button>
+          </div>
+          {c.consigliati&&c.consigliati.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:6,alignItems:"center"}}>
+            <span className="hint">Di zona:</span>
+            {c.consigliati.map(nm=>(<button key={nm} type="button" className={"btn "+(f.installatore===nm?"":"gh")+" sm"} onClick={()=>set("installatore",nm)}>{nm}</button>))}
+          </div>}
+          <div className="hint" style={{marginTop:5}}>{(c.consigliati&&c.consigliati.length)?("Provincia "+(c.provincia||"—")+": "+c.consigliati.length+(c.consigliati.length===1?" installatore disponibile":" installatori disponibili")):"Provincia non coperta in Zone — scegli un installatore o lascia «da assegnare»."}</div>
+        </div>
+        {F("Preparazione / brandizzazione","preparazione","text",PREP)}
+        {F("Modalità consegna","modalitaConsegna","text",CONSEGNA)}
+        {F("Data consegna","dataConsegna","date")}
+
+        <div className="sec">Tempistiche & recesso</div>
+        {F("Data vendita (firma)","dataVendita","date")}
+        <div className="fld"><label>Scad. recesso (+15 gg, auto)</label><input value={fmtD(c.scadRecesso)} disabled/></div>
+        <div className="fld"><label>Recesso</label><select value={f.recesso||""} onChange={e=>set("recesso",e.target.value)}><option value=""></option><option>Recesso</option></select></div>
+        <div className="fld"><label>Cliente saldato</label><select value={f.saldato||""} onChange={e=>set("saldato",e.target.value)}><option value=""></option><option>Sì</option><option>No</option></select></div>
+        {F("Data posa prevista (programmata)","dataPrevista","date")}
+        {F("Data installazione (fatta)","dataInstallazione","date")}
+
+        <div className="sec">Extra installatore ({c.ambito||"—"})</div>
+        {Slot(1)}{Slot(2)}{Slot(3)}
+        {F("Altri extra € (voci a corpo)","altriExtra","number")}
+
+        <div className="sec">Materiale & note</div>
+        <div className="fld full"><label>Allegati — foto/video (da WhatsApp)</label>
+          <Attachments files={f.files||[]}
+            onAdd={async(fs)=>{const metas=[];for(const file of fs){const id=uid();try{await filePut(id,file);metas.push({id,name:file.name,type:file.type,size:file.size});}catch(e){alert("Impossibile salvare «"+file.name+"» (memoria piena?).");}}if(metas.length)set("files",[...(f.files||[]),...metas]);}}
+            onRemove={async(fx)=>{if(!confirm("Rimuovere «"+fx.name+"»?"))return;try{await fileDel(fx.id);}catch(e){}set("files",(f.files||[]).filter(x=>x.id!==fx.id));}}/>
+        </div>
+        {F("Link foto/video (cloud, opzionale)","link")}
+        {F("Note","note","textarea")}
+
+        <div className="calc">
+          <div className="row">
+            <div className="it"><div className="k">Fase</div><div className="v"><span className={"pill "+FCLASS(c.fase)} style={{fontSize:14}}>{c.fase||"—"}</span></div></div>
+            <div className="it"><div className="k">Compenso posa</div><div className="v mono">{eur(c.compensoStd)}</div></div>
+            <div className="it"><div className="k">Extra</div><div className="v mono">{eur(c.extraTot)}</div></div>
+          </div>
+          <div className="it big"><div className="k">Compenso installatore</div><div className="v mono">{c.fase==="RECESSO"?"€ 0 (recesso)":eur(c.compensoInst)}</div></div>
+        </div>
+      </div></div>
+      <div className="ft"><span className="hint">{c.effInst?("Installatore: "+c.effInst):"Da assegnare — nessun installatore"} · <b>salvataggio automatico</b></span>
+        <div style={{display:"flex",gap:10}}><button className="btn gh" onClick={()=>schedaIntervento(f,db,c)}>🖨 Stampa scheda</button><button className="btn" onClick={onClose}>Chiudi</button></div></div>
+    </div>
+  </div>);
+}
+
+/* ---------- CRUD generico anagrafiche ---------- */
+function Crud({title,items,cols,form,onSave,onDel,extra}){
+  const [edit,setEdit]=useState(null);
+  const [q,setQ]=useState("");
+  const norm=it=>Object.entries(it).filter(([k])=>k!=="id"&&k!=="__new").map(([,v])=>Array.isArray(v)?v.join(" "):(typeof v==="string"?v:"")).join(" ").toLowerCase();
+  const shown=q.trim()?items.filter(it=>norm(it).includes(q.trim().toLowerCase())):items;
+  return(<>
+    <div className="filters" style={{marginBottom:12}}>
+      <input placeholder={"Cerca "+title.toLowerCase()+"…"} value={q} onChange={e=>setQ(e.target.value)} style={{minWidth:260}}/>
+      <span className="hint">{shown.length}{q.trim()?(" di "+items.length):""}</span>
+      <div style={{flex:1}}/>
+      <button className="btn" onClick={()=>setEdit({id:uid(),__new:true})}>+ Aggiungi</button>
+    </div>
+    <div className="tbl-wrap"><table><thead><tr>{cols.map(c=>(<th key={c.k} className={c.num?"num":""}>{c.l}</th>))}<th></th></tr></thead>
+      <tbody>{shown.length===0?<tr><td colSpan={cols.length+1}><div className="empty hint">{q.trim()?"Nessun risultato per «"+q+"».":"Nessun record."}</div></td></tr>:
+      shown.map(it=>(<tr key={it.id} onClick={()=>setEdit(structuredClone(it))} style={{cursor:"pointer"}}>
+        {cols.map(c=>(<td key={c.k} className={c.num?"num "+(c.eur?"eur":""):""}>{c.render?c.render(it):(it[c.k]||"")}</td>))}
+        <td onClick={e=>{e.stopPropagation();onDel(it.id);}}><button className="btn link">✕</button></td></tr>))}
+      </tbody></table></div>
+    {extra}
+    {edit&&<div className="ovl" onClick={e=>{if(e.target.classList.contains("ovl"))setEdit(null);}}>
+      <div className="modal" style={{maxWidth:560}}><div className="hd"><h2>{edit.__new?"Nuovo":"Modifica"} · {title}</h2><button className="x" onClick={()=>setEdit(null)}>×</button></div>
+      <div className="bd">{form(edit,(k,v)=>setEdit(s=>({...s,[k]:v})))}</div>
+      <div className="ft"><span/><div style={{display:"flex",gap:10}}><button className="btn gh" onClick={()=>setEdit(null)}>Annulla</button><button className="btn" onClick={()=>{onSave(edit);setEdit(null);}}>Salva</button></div></div>
+      </div></div>}
+  </>);
+}
+const Fi=(edit,set,label,k,type="text",opts=null)=>(<div className="fld" key={k}><label>{label}</label>
+  {opts?<select value={edit[k]||""} onChange={e=>set(k,e.target.value)}><option value=""></option>{opts.map(o=>(<option key={o}>{o}</option>))}</select>
+  :<input type={type} value={edit[k]||""} onChange={e=>set(k,e.target.value)}/>}</div>);
+
+function Clienti({db,comp,up,flash}){
+  return <Crud title="Cliente"
+    items={db.clienti}
+    cols={[{k:"nome",l:"Cliente"},{k:"referente",l:"Referente"},{k:"tel",l:"Telefono"},{k:"provincia",l:"Provincia"},{k:"email",l:"Email"}]}
+    form={(e,s)=>(<div className="form">{Fi(e,s,"Cliente / Ragione sociale","nome")}{Fi(e,s,"Referente","referente")}{Fi(e,s,"Telefono","tel")}{Fi(e,s,"Email","email")}{Fi(e,s,"Indirizzo","indirizzo")}<div className="fld"><label>Provincia</label><select value={e.provincia||""} onChange={ev=>s("provincia",ev.target.value)}><option value=""></option>{ALL_PROV.map(p=>(<option key={p}>{p}</option>))}</select></div>{Fi(e,s,"CAP","cap")}<div className="fld full">{Fi(e,s,"Note","note")}</div>{!e.__new&&<div className="fld full"><button type="button" className="btn gh" onClick={()=>schedaCliente(e,db,comp)}>🖨 Stampa scheda cliente</button></div>}</div>)}
+    onSave={x=>{up(d=>{const i=d.clienti.findIndex(c=>c.id===x.id);delete x.__new;if(i>=0)d.clienti[i]=x;else d.clienti.push(x);return d;});flash("Cliente salvato");}}
+    onDel={id=>{const n=db.pose.filter(p=>p.clienteId===id).length;if(!confirm(n?("Attenzione: "+n+" pratiche usano questo cliente e resteranno senza cliente. Eliminare comunque?"):"Eliminare il cliente?"))return;up(d=>{d.clienti=d.clienti.filter(c=>c.id!==id);return d;});flash("Cliente eliminato");}}/>;
+}
+function Installatori({db,comp,up,flash}){
+  const stat=useMemo(()=>{const m={};db.installatori.forEach(i=>m[i.nome]={n:0,c:0});comp.forEach(({c})=>{if(c.effInst&&m[c.effInst]){m[c.effInst].n++;m[c.effInst].c+=c.compensoInst;}});return m;},[db,comp]);
+  return <Crud title="Installatore"
+    items={db.installatori}
+    cols={[{k:"nome",l:"Installatore"},{k:"referente",l:"Referente"},{k:"tel",l:"Telefono"},{l:"Regioni",k:"_reg",render:i=>(i.regioni||[]).join(", ")},{l:"N. pose",num:true,k:"_n",render:i=>(stat[i.nome]?.n||0)},{l:"Compenso tot.",num:true,eur:true,k:"_c",render:i=>eur(stat[i.nome]?.c||0)}]}
+    form={(e,s)=>(<div className="form">{Fi(e,s,"Installatore / Ragione sociale","nome")}{Fi(e,s,"Referente","referente")}{Fi(e,s,"Telefono","tel")}{Fi(e,s,"Email","email")}{Fi(e,s,"P.IVA / C.F.","piva")}{Fi(e,s,"PEC","pec")}<div className="fld full"><label>Sede (indirizzo, CAP, città)</label><input value={e.sede||""} onChange={ev=>s("sede",ev.target.value)}/></div><div className="fld full"><label>Regioni di competenza</label><RegionSelect value={e.regioni} onChange={v=>s("regioni",v)}/></div><div className="fld full"><label>Note (abilitazioni DM 37/2008, F-GAS, REA, scadenze…)</label><textarea rows="3" value={e.note||""} onChange={ev=>s("note",ev.target.value)}/></div></div>)}
+    onSave={x=>{up(d=>{const i=d.installatori.findIndex(c=>c.id===x.id);delete x.__new;if(i>=0)d.installatori[i]=x;else d.installatori.push(x);return d;});flash("Installatore salvato");}}
+    onDel={id=>{const nome=(db.installatori.find(i=>i.id===id)||{}).nome;const np=db.pose.filter(p=>p.installatore===nome).length;const nz=Object.values(db.zoneMap).filter(v=>Array.isArray(v)?v.includes(nome):v===nome).length;const msg=(np||nz)?("Questo installatore è usato in "+np+" pratiche e "+nz+" province. Eliminarlo lascerà quei riferimenti orfani. Eliminare comunque?"):"Eliminare l'installatore?";if(!confirm(msg))return;up(d=>{d.installatori=d.installatori.filter(c=>c.id!==id);Object.keys(d.zoneMap).forEach(k=>{const v=d.zoneMap[k];if(Array.isArray(v)){const nv=v.filter(x=>x!==nome);if(nv.length)d.zoneMap[k]=nv;else delete d.zoneMap[k];}else if(v===nome)delete d.zoneMap[k];});return d;});flash("Installatore eliminato");}}/>;
+}
+function Consulenti({db,comp,up,flash}){
+  const stat=useMemo(()=>{const m={};db.consulenti.forEach(x=>m[x.nome]={n:0,v:0,nr:0,vr:0});comp.forEach(({p,c})=>{const k=p.consulente;if(k&&m[k]){m[k].n++;m[k].v+=(+p.importoVendita||0);if(c.fase==="RECESSO"){m[k].nr++;m[k].vr+=(+p.importoVendita||0);}}});return m;},[db,comp]);
+  return <Crud title="Consulente"
+    items={db.consulenti}
+    cols={[{k:"nome",l:"Consulente"},{k:"ruolo",l:"Ruolo",render:i=>(<span className="tag">{i.ruolo}</span>)},{l:"Regioni",k:"_reg",render:i=>(i.regioni||[]).join(", ")},{l:"N. pose",num:true,k:"_n",render:i=>stat[i.nome]?.n||0},{l:"Venduto",num:true,eur:true,k:"_v",render:i=>eur(stat[i.nome]?.v||0)},{l:"Recessi",num:true,k:"_r",render:i=>stat[i.nome]?.nr||0},{l:"Venduto netto",num:true,eur:true,k:"_vn",render:i=>eur((stat[i.nome]?.v||0)-(stat[i.nome]?.vr||0))}]}
+    form={(e,s)=>(<div className="form">{Fi(e,s,"Consulente","nome")}{Fi(e,s,"Ruolo","ruolo","text",RUOLI)}<div className="fld"><label>Capo area riferimento</label><select value={e.capoArea||""} onChange={ev=>s("capoArea",ev.target.value)}><option value=""></option>{db.consulenti.filter(x=>x.ruolo==="Capo Area").map(x=>(<option key={x.id}>{x.nome}</option>))}</select></div>{Fi(e,s,"Telefono","tel")}{Fi(e,s,"Email","email")}<div className="fld full"><label>Regioni di competenza</label><RegionSelect value={e.regioni} onChange={v=>s("regioni",v)}/></div></div>)}
+    onSave={x=>{up(d=>{const i=d.consulenti.findIndex(c=>c.id===x.id);delete x.__new;if(i>=0)d.consulenti[i]=x;else d.consulenti.push(x);return d;});flash("Consulente salvato");}}
+    onDel={id=>{const nome=(db.consulenti.find(i=>i.id===id)||{}).nome;const n=db.pose.filter(p=>p.consulente===nome).length;if(!confirm(n?("Questo consulente è usato in "+n+" pratiche. Eliminarlo lascerà quei riferimenti orfani. Eliminare comunque?"):"Eliminare il consulente?"))return;up(d=>{d.consulenti=d.consulenti.filter(c=>c.id!==id);return d;});flash("Consulente eliminato");}}/>;
+}
+
+/* ---------- Zone ---------- */
+function Zone({db,up,flash}){
+  const [q,setQ]=useState("");
+  const listOf=prov=>{const v=db.zoneMap[prov];return Array.isArray(v)?v.filter(Boolean):(v?[v]:[]);};
+  const add=(prov,nome)=>up(d=>{const cur=Array.isArray(d.zoneMap[prov])?d.zoneMap[prov]:(d.zoneMap[prov]?[d.zoneMap[prov]]:[]);if(nome&&!cur.includes(nome))cur.push(nome);d.zoneMap[prov]=cur;return d;});
+  const rem=(prov,nome)=>up(d=>{const cur=(Array.isArray(d.zoneMap[prov])?d.zoneMap[prov]:(d.zoneMap[prov]?[d.zoneMap[prov]]:[])).filter(x=>x!==nome);if(cur.length)d.zoneMap[prov]=cur;else delete d.zoneMap[prov];return d;});
+  const move=(prov,ix,dir)=>up(d=>{const v=d.zoneMap[prov];const cur=Array.isArray(v)?[...v]:(v?[v]:[]);const j=ix+dir;if(j<0||j>=cur.length)return d;const t=cur[ix];cur[ix]=cur[j];cur[j]=t;d.zoneMap[prov]=cur;return d;});
+  const assigned=ALL_PROV.filter(p=>listOf(p).length>0).length;
+  return(<>
+    <div className="filters"><input placeholder="Cerca provincia…" value={q} onChange={e=>setQ(e.target.value)}/>
+      <div style={{flex:1}}/><span className="tag">{assigned}/{ALL_PROV.length} coperte</span></div>
+    <div className="hint" style={{marginBottom:10}}>Puoi assegnare <b>più installatori</b> alla stessa provincia. Il primo della lista (★) è quello proposto in automatico sulle nuove pratiche: usa le frecce ↑↓ per cambiare l’ordine.</div>
+    <div className="grid" style={{gap:14}}>
+    {PROV.map(([reg,ps])=>{
+      const rows=ps.filter(([n])=>!q||n.toLowerCase().includes(q.toLowerCase()));
+      if(!rows.length)return null;
+      return(<div className="card" key={reg}><h3>{reg}</h3><div className="tbl-wrap" style={{border:0,boxShadow:"none"}}>
+        <table><thead><tr><th style={{width:170}}>Provincia</th><th style={{width:60}}>Sigla</th><th>Installatori</th></tr></thead>
+        <tbody>{rows.map(([n,s])=>{
+          const cur=listOf(n);const avail=db.installatori.filter(i=>!cur.includes(i.nome));
+          return(<tr key={n}><td>{n}</td><td className="hint">{s}</td>
+          <td style={{whiteSpace:"normal"}}>
+            {cur.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:5}}>
+              {cur.map((nm,ix)=>(<span key={nm} className="tag" style={{display:"inline-flex",gap:6,alignItems:"center"}}>{ix===0&&<b title="proposto in automatico">★</b>}{nm}{cur.length>1&&<span onClick={()=>{if(ix>0)move(n,ix,-1);}} title="sposta su" style={{cursor:ix>0?"pointer":"default",opacity:ix>0?1:.25,fontWeight:700}}>↑</span>}{cur.length>1&&<span onClick={()=>{if(ix<cur.length-1)move(n,ix,1);}} title="sposta giù" style={{cursor:ix<cur.length-1?"pointer":"default",opacity:ix<cur.length-1?1:.25,fontWeight:700}}>↓</span>}<span onClick={()=>rem(n,nm)} title="rimuovi" style={{cursor:"pointer",fontWeight:700}}>✕</span></span>))}
+            </div>}
+            <select value="" onChange={e=>{if(e.target.value)add(n,e.target.value);}} style={{padding:"6px 8px",border:"1px solid var(--line)",borderRadius:7,background:cur.length?"#fff":"#FDF6E9"}}>
+              <option value="">{cur.length?"+ aggiungi installatore…":"— da coprire —"}</option>
+              {avail.map(i=>(<option key={i.id}>{i.nome}</option>))}
+            </select>
+          </td></tr>);})}</tbody></table>
+      </div></div>);
+    })}
+    </div>
+  </>);
+}
+
+/* ---------- Tariffe ---------- */
+function Tariffe({db,up,flash}){
+  const upd=(kind,i,field,val)=>up(d=>{d.tariffe[kind][i][field]=field==="voce"||field==="config"||field==="prodotto"||field==="tipo"?val:(val===""?null:+val);return d;});
+  const num=v=>v==null?"":v;
+  return(<div className="grid" style={{gap:16}}>
+    <div className="two">
+      <div className="card"><h3>Compensi posa — Clima</h3><div className="tbl-wrap" style={{border:0,boxShadow:"none"}}><table><thead><tr><th>Configurazione</th><th className="num">Compenso €</th></tr></thead>
+        <tbody>{db.tariffe.clima.map((x,i)=>(<tr key={i}><td>{x.config}</td><td className="num"><input className="mono" style={{width:90,textAlign:"right",border:"1px solid var(--line)",borderRadius:6,padding:"4px 6px"}} type="number" value={num(x.compenso)} onChange={e=>upd("clima",i,"compenso",e.target.value)}/></td></tr>))}</tbody></table></div></div>
+      <div className="card"><h3>Compensi posa — Termico <span className="hint">per categoria</span></h3><div className="tbl-wrap" style={{border:0,boxShadow:"none"}}><table><thead><tr><th>Prodotto</th><th>Tipo</th><th className="num">Compenso €</th></tr></thead>
+        <tbody>{db.tariffe.termico.map((x,i)=>(<tr key={i}><td>{x.prodotto}</td><td className="hint">{x.tipo}</td><td className="num"><input className="mono" style={{width:90,textAlign:"right",border:"1px solid var(--line)",borderRadius:6,padding:"4px 6px"}} type="number" value={num(x.compenso)} onChange={e=>upd("termico",i,"compenso",e.target.value)}/></td></tr>))}</tbody></table></div></div>
+    </div>
+    <div className="card"><h3>Lavorazioni extra <span className="hint">prezzo per mondo — vuoto = non applicabile</span></h3><div className="tbl-wrap" style={{border:0,boxShadow:"none"}}><table><thead><tr><th>Lavorazione</th><th className="num">€ Clima</th><th className="num">€ Termico</th></tr></thead>
+      <tbody>{db.tariffe.extra.map((x,i)=>(<tr key={i}><td>{x.voce}</td>
+        <td className="num"><input className="mono" style={{width:80,textAlign:"right",border:"1px solid var(--line)",borderRadius:6,padding:"4px 6px"}} type="number" value={num(x.clima)} onChange={e=>upd("extra",i,"clima",e.target.value)}/></td>
+        <td className="num"><input className="mono" style={{width:80,textAlign:"right",border:"1px solid var(--line)",borderRadius:6,padding:"4px 6px"}} type="number" value={num(x.termico)} onChange={e=>upd("extra",i,"termico",e.target.value)}/></td></tr>))}</tbody></table></div>
+      <div className="bd hint">Nota: un extra vale solo dove ha un prezzo. Su una posa clima le voci solo-termiche restano a 0, e viceversa.</div>
+    </div>
+  </div>);
+}
+
+/* ---------- Backup ---------- */
+function Backup({db,setDb,comp,flash,cloud,setCloud,pushNow,pullNow}){
+  const fileRef=useRef();
+  const expJSON=()=>{const blob=new Blob([JSON.stringify(db,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="arquati_backup_"+today()+".json";a.click();flash("Backup JSON scaricato");};
+  const impJSON=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=migrate(JSON.parse(r.result));setDb(d);flash("Dati importati");}catch(err){alert("File non valido");}};r.readAsText(f);};
+  const expXLSX=()=>{
+    const wb=XLSX.utils.book_new();
+    const pose=comp.map(({p,c})=>({"N. contratto":p.nContratto,Cliente:c.cliente,Provincia:c.provincia,Consulente:p.consulente,"Data appuntamento":p.dataApp,"Clima 1":p.clima1,"Clima 2":p.clima2,"Clima 3":p.clima3,"Clima 4":p.clima4,"Prodotto Termico":p.termico,Ambito:c.ambito,"Importo vendita":+p.importoVendita||0,Installatore:c.effInst,"Data vendita":p.dataVendita,"Scad. recesso":c.scadRecesso,Recesso:p.recesso,Preparazione:p.preparazione,"Modalità consegna":p.modalitaConsegna,"Data consegna":p.dataConsegna,"Data prevista":p.dataPrevista,"Data installazione":p.dataInstallazione,FASE:c.fase,"Compenso posa":c.compensoStd,"Extra":c.extraTot,"Compenso installatore":c.compensoInst,"Cliente saldato":p.saldato,"Da programmare":c.daPian?"SÌ":"","Link foto/video":p.link,Note:p.note}));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pose),"Lavori Pose");
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(db.clienti.map(({id,...r})=>r)),"Clienti");
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(db.installatori.map(({id,...r})=>r)),"Installatori");
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(db.consulenti.map(({id,...r})=>r)),"Consulenti");
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(Object.entries(db.zoneMap).map(([Provincia,v])=>({Provincia,Installatori:Array.isArray(v)?v.join(", "):(v||"")}))),"Zone");
+    XLSX.writeFile(wb,"Gestione_Pose_"+today()+".xlsx");
+    flash("Excel esportato");
+  };
+  const reset=()=>{if(confirm("Cancellare TUTTI i dati e ripartire dagli esempi?")){localStorage.removeItem(KEY);setDb(JSON.parse(JSON.stringify(seed)));flash("Dati azzerati");}};
+  const zipRef=useRef();
+  const expZIP=async()=>{
+    try{
+      flash("Preparo il backup…");
+      const zip=new JSZip();
+      zip.file("data.json",JSON.stringify(db,null,2));
+      const folder=zip.folder("files");
+      for(const p of db.pose){for(const f of (p.files||[])){try{const b=await fileGet(f.id);if(b)folder.file(f.id+"__"+f.name,b);}catch(e){}}}
+      const blob=await zip.generateAsync({type:"blob"});
+      const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="arquati_backup_completo_"+today()+".zip";a.click();
+      flash("Backup completo (ZIP) scaricato");
+    }catch(e){alert("Errore nel backup ZIP: "+e.message);}
+  };
+  const impZIP=async e=>{
+    const file=e.target.files[0];if(!file)return;
+    try{
+      const zip=await JSZip.loadAsync(file);
+      const dj=zip.file("data.json");if(!dj){alert("ZIP non valido (manca data.json)");return;}
+      const data=JSON.parse(await dj.async("string"));
+      const entries=[];zip.folder("files").forEach((path,f)=>{if(!f.dir)entries.push(f);});
+      for(const f of entries){const nm=f.name.replace(/^files\//,"");const id=nm.split("__")[0];const blob=await f.async("blob");try{await filePut(id,blob);}catch(er){}}
+      setDb(migrate(data));flash("Backup completo importato");
+    }catch(er){alert("ZIP non leggibile: "+er.message);}
+    e.target.value="";
+  };
+  return(<div className="grid" style={{gap:16}}>
+    <div className="card"><h3>Sincronizzazione cloud <span className="tag" style={{background:cloudOn(cloud)?"var(--brand-soft)":"#eee",color:cloudOn(cloud)?"var(--brand-dk)":"#999"}}>{cloudOn(cloud)?(cloud.auto?"attiva (auto)":"configurata"):"non attiva"}</span></h3><div className="bd">
+      <p className="hint">Collega un database <b>Supabase</b> (gratuito) per lavorare sugli <b>stessi dati</b> da più dispositivi (tu e l'ufficio). Nota: foto/video restano sul dispositivo, non si sincronizzano.</p>
+      <div className="form" style={{gridTemplateColumns:"1fr"}}>
+        <div className="fld"><label>URL progetto Supabase</label><input value={cloud.url} onChange={e=>setCloud({...cloud,url:e.target.value})} placeholder="https://xxxxxxxx.supabase.co"/></div>
+        <div className="fld"><label>Chiave «anon public»</label><input value={cloud.key} onChange={e=>setCloud({...cloud,key:e.target.value})} placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."/></div>
+      </div>
+      <label style={{display:"flex",gap:8,alignItems:"center",marginTop:10}}><input type="checkbox" checked={cloud.auto} onChange={e=>setCloud({...cloud,auto:e.target.checked})}/> <span>Sincronizza automaticamente (ogni ~15 secondi)</span></label>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:12}}>
+        <button className="btn" onClick={async()=>{try{await pushNow();flash("Dati inviati al cloud");}catch(e){alert("Errore invio: "+e.message);}}}>⤴ Salva sul cloud</button>
+        <button className="btn gh" onClick={async()=>{if(!confirm("Sovrascrivere i dati di questo dispositivo con quelli del cloud?"))return;try{const r=await pullNow();flash(r?"Dati caricati dal cloud":"Nessun dato ancora sul cloud");}catch(e){alert("Errore lettura: "+e.message);}}}>⤵ Carica dal cloud</button>
+      </div>
+      <p className="hint" style={{marginTop:10}}>Modello: l'ultima modifica salvata vince. Per un piccolo ufficio va bene; evitate di modificare la stessa pratica nello stesso momento.</p>
+      <details style={{marginTop:8}}><summary style={{cursor:"pointer",fontWeight:600,color:"var(--brand-dk)"}}>Come si configura (una volta sola, ~5 min)</summary>
+        <ol className="hint" style={{lineHeight:1.7,marginTop:8}}>
+          <li>Vai su <b>supabase.com</b>, registrati (gratis) e crea un nuovo progetto.</li>
+          <li>Menu <b>SQL Editor</b> → incolla ed esegui:<br/><code style={{display:"block",background:"#F3F6F1",padding:"8px",borderRadius:6,margin:"4px 0",whiteSpace:"pre-wrap"}}>create table app_state (id int primary key, data jsonb, updated_at timestamptz default now());{"\n"}insert into app_state (id, data) values (1, '{}');{"\n"}alter table app_state disable row level security;</code></li>
+          <li>Menu <b>Project Settings → API</b>: copia <b>Project URL</b> e la chiave <b>anon public</b> e incollale qui sopra.</li>
+          <li>Premi <b>Salva sul cloud</b> dal dispositivo che ha già i dati. Sugli altri dispositivi, inserisci gli stessi URL/chiave e premi <b>Carica dal cloud</b> (poi attiva l'auto).</li>
+        </ol>
+        <p className="hint">Tieni riservati URL e chiave: chi li ha può leggere/scrivere i dati.</p>
+      </details>
+    </div></div>
+    <div className="two">
+    <div className="card"><h3>Salvataggio & ripristino</h3><div className="bd">
+      <p className="hint"><b>Backup completo (ZIP)</b>: contiene dati <u>e</u> foto/video. È quello da usare per la copia di sicurezza e per spostarti su un altro PC/telefono.</p>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:6}}>
+        <button className="btn" onClick={expZIP}>⤓ Backup completo (ZIP, con file)</button>
+        <button className="btn gh" onClick={()=>zipRef.current.click()}>⤒ Ripristina da ZIP</button>
+        <input ref={zipRef} type="file" accept=".zip,application/zip" style={{display:"none"}} onChange={impZIP}/>
+      </div>
+      <p className="hint" style={{marginTop:16}}>Backup rapido <b>solo dati</b> (JSON, leggero, senza foto/video):</p>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:6}}>
+        <button className="btn gh" onClick={expJSON}>⤓ Solo dati (JSON)</button>
+        <button className="btn gh" onClick={()=>fileRef.current.click()}>⤒ Ripristina dati (JSON)</button>
+        <input ref={fileRef} type="file" accept="application/json" style={{display:"none"}} onChange={impJSON}/>
+      </div>
+      <div style={{marginTop:18}}><button className="btn acc" onClick={reset}>Azzera tutto</button></div>
+    </div></div>
+    <div className="card"><h3>Esporta in Excel</h3><div className="bd">
+      <p className="hint">Genera un file .xlsx con tutti i fogli (Pose calcolate, Clienti, Installatori, Consulenti, Zone) da archiviare o condividere col commercialista.</p>
+      <button className="btn" style={{marginTop:10}} onClick={expXLSX}>▤ Esporta Excel (.xlsx)</button>
+    </div></div>
+    </div>
+  </div>);
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+<script>
+/* PWA: icona generata + manifest + service worker (best effort) */
+(function(){
+  try{
+    function icon(sz){var c=document.createElement("canvas");c.width=c.height=sz;var x=c.getContext("2d");
+      x.fillStyle="#EEF2EC";x.fillRect(0,0,sz,sz);var r=sz*0.24,cx=sz/2,cy=sz/2;
+      x.strokeStyle="#E4532B";x.lineWidth=sz*0.03;x.lineCap="round";
+      for(var i=0;i<12;i++){var a=i*Math.PI/6;x.beginPath();x.moveTo(cx+Math.cos(a)*r*1.4,cy+Math.sin(a)*r*1.4);x.lineTo(cx+Math.cos(a)*r*1.78,cy+Math.sin(a)*r*1.78);x.stroke();}
+      var g=x.createRadialGradient(cx,cy-r*0.25,r*0.15,cx,cy,r);g.addColorStop(0,"#F6B24A");g.addColorStop(1,"#E4532B");
+      x.fillStyle=g;x.beginPath();x.arc(cx,cy,r,0,7);x.fill();return c.toDataURL("image/png");}
+    var i192=icon(192),i512=icon(512);
+    var ai=document.getElementById("appleIcon");if(ai)ai.href=i192;
+    var manifest={name:"Gestione Pose · Arquati Eco Living",short_name:"Pose Arquati",start_url:".",scope:".",display:"standalone",orientation:"any",background_color:"#EEF2EC",theme_color:"#356B41",icons:[{src:i192,sizes:"192x192",type:"image/png",purpose:"any maskable"},{src:i512,sizes:"512x512",type:"image/png",purpose:"any maskable"}]};
+    var ml=document.getElementById("manifestLink");if(ml)ml.href=URL.createObjectURL(new Blob([JSON.stringify(manifest)],{type:"application/manifest+json"}));
+    if("serviceWorker" in navigator && location.protocol.indexOf("http")===0){
+      var sw="self.addEventListener('install',function(e){self.skipWaiting();});self.addEventListener('activate',function(e){self.clients.claim();});self.addEventListener('fetch',function(e){e.respondWith(fetch(e.request).catch(function(){return caches.match(e.request);}));});";
+      navigator.serviceWorker.register(URL.createObjectURL(new Blob([sw],{type:"text/javascript"}))).catch(function(){});
+    }
+  }catch(err){console.warn("PWA:",err);}
+})();
+</script>
+</body>
+</html>
