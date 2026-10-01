@@ -71,6 +71,8 @@ a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .card h3{margin:0;padding:14px 18px;border-bottom:1px solid var(--line);font-size:14.5px;display:flex;justify-content:space-between;align-items:center}
 .card .bd{padding:14px 18px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+/* una tabella larga scorre dentro il suo riquadro invece di allargare tutta la pagina */
+.grid>*,.two>*,.split>*{min-width:0}
 @media(max-width:900px){.two{grid-template-columns:1fr}}
 /* table */
 .tbl-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--panel);box-shadow:var(--shadow)}
@@ -177,7 +179,8 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .modal .hd{padding:16px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;border-radius:16px 16px 0 0}
 .modal .hd h2{margin:0;font-size:18px}
 .modal .bd{padding:20px 22px}
-.modal .ft{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;align-items:center;position:sticky;bottom:0;background:#fff;border-radius:0 0 16px 16px}
+.modal .ft{padding:14px 22px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center;position:sticky;bottom:0;background:#fff;border-radius:0 0 16px 16px}
+.modal .ft>div{flex-wrap:wrap}
 .x{background:none;border:0;font-size:22px;color:var(--muted);line-height:1;padding:2px 6px}
 .x:hover{color:var(--accent)}
 /* form */
@@ -3155,7 +3158,7 @@ function Margini({db,setDb,comp,openPose,flash}){
 
     <div className="two">
       <div className="card"><h3>Quadro margini</h3><div className="bd">
-        <div className="kpis">
+        <div className="grid kpis">
           <div className="kpi"><div className="k">Venduto netto</div><div className="v mono">{eur(tot.net)}</div></div>
           <div className="kpi"><div className="k">Costi totali</div><div className="v mono">{eur(tot.cost)}</div></div>
           <div className="kpi"><div className="k">Margine</div><div className="v mono">{eur(tot.mrg)}</div></div>
