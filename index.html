@@ -231,12 +231,33 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .bar .fill{background:var(--brand);height:100%}
 .bar .fill.b{background:var(--gold)}
 .barrow .vv{width:auto;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+/* accesso, utenti e proposte di modifica */
+.accesso{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg)}
+.accbox{width:100%;max-width:380px;padding:26px 24px;display:flex;flex-direction:column;gap:14px}
+.accbox h2{margin:0;font-size:20px}
+.acclogo{width:100%;max-width:220px;align-self:center;display:block}
+.accerr{background:var(--accent-soft);color:#A93A1B;border-radius:9px;padding:9px 12px;font-size:13px;font-weight:500}
+.chip{display:flex;align-items:center;gap:8px;background:#F6F9F5;border:1px solid var(--line);border-radius:999px;padding:3px 4px 3px 12px;font-size:13px;white-space:nowrap}
+.chip .dot{width:8px;height:8px;border-radius:50%;background:#B6BDB3;flex:0 0 8px}
+.chip .dot.ok{background:var(--brand)} .chip .dot.wait{background:var(--gold)} .chip .dot.ko{background:var(--accent)}
+.nbadge{margin-left:auto;background:var(--accent);color:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:0 7px;line-height:18px}
+.avviso{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#FBF6E6;border:1px solid #EDDDAA;border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:13px}
+.avviso.bozza{background:var(--brand-soft);border-color:#C7DCC1}
+.tag.ko{background:#F6D9D0;color:#A93A1B}
+.tdiff-wrap{overflow-x:auto}
+.tdiff td{white-space:normal;vertical-align:top;min-width:90px}
+.tdiff td.prima{color:var(--muted);text-decoration:line-through;text-decoration-color:rgba(108,122,112,.5)}
+.tdiff td.dopo{font-weight:600}
+.tdiff .conf{font-weight:500;color:#A93A1B;font-size:12px;margin-top:3px}
+code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;margin:6px 0;white-space:pre-wrap;font-size:12px}
+@media(max-width:1000px){.chip .hint{display:none}}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const {useState,useEffect,useMemo,useRef}=React;
+const {useState,useEffect,useMemo,useRef,useContext}=React;
+const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
 const PROV=[
@@ -669,21 +690,218 @@ function load(){
 }
 function persist(db){try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){alert("Memoria del browser piena: fai un backup ed elimina qualcosa.");}}
 
-/* ---------- sincronizzazione cloud (Supabase REST) ---------- */
-const CKEY="arquati_cloud";
-function loadCloud(){try{return Object.assign({url:"",key:"",auto:false},JSON.parse(localStorage.getItem(CKEY)||"{}"));}catch(e){return {url:"",key:"",auto:false};}}
-function saveCloud(c){try{localStorage.setItem(CKEY,JSON.stringify(c));}catch(e){}}
+/* ---------- cloud con utenti (Supabase: accesso con password e permessi) ----------
+   Tutti i dati stanno in una riga (app_state) che può scrivere solo l'amministratore.
+   Chi è in sola lettura modifica una bozza e la invia come proposta (tabella proposte):
+   diventa effettiva quando l'amministratore la approva. I permessi li applica il
+   database (supabase/setup.sql), per questo URL e chiave pubblica del progetto possono
+   stare qui nel codice: senza email e password non si legge niente. */
+const CLOUD_FISSO={url:"",key:""};
+const CKEY="arquati_cloud",SKEY="arquati_sessione",UKEY="arquati_ultimo_accesso",STATOKEY="arquati_cloud_stato",PKEY="arquati_dati_prima_del_cloud";
+const ls={get:k=>{try{return localStorage.getItem(k);}catch(e){return null;}},
+  set:(k,v)=>{try{localStorage.setItem(k,v);return true;}catch(e){return false;}},
+  del:k=>{try{localStorage.removeItem(k);}catch(e){}}};
+const leggiJSON=k=>{try{return JSON.parse(ls.get(k)||"null");}catch(e){return null;}};
+function loadCloud(){return Object.assign({url:"",key:""},leggiJSON(CKEY)||{});}
+function saveCloud(c){ls.set(CKEY,JSON.stringify({url:c.url||"",key:c.key||""}));}
+const cloudFisso=()=>!!(CLOUD_FISSO.url&&CLOUD_FISSO.key);
+const cloudCfg=c=>cloudFisso()?{...CLOUD_FISSO}:{url:(c.url||"").trim().replace(/\/+$/,""),key:(c.key||"").trim()};
 const cloudOn=c=>!!(c&&c.url&&c.key);
-async function cloudPushData(cfg,data){
-  const h={apikey:cfg.key,Authorization:"Bearer "+cfg.key,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"};
-  const r=await fetch(cfg.url.replace(/\/+$/,"")+"/rest/v1/app_state",{method:"POST",headers:h,body:JSON.stringify([{id:1,data:data,updated_at:new Date().toISOString()}])});
-  if(!r.ok)throw new Error("HTTP "+r.status+" — "+(await r.text()).slice(0,140));
+/* {url, versione, sporco}: da quale cloud vengono i dati salvati in questo browser, a quale
+   versione corrispondono e se l'amministratore ha modifiche non ancora salvate sul cloud */
+const leggiStato=()=>leggiJSON(STATOKEY);
+
+const sessione={s:leggiJSON(SKEY),rinnovo:null};
+function salvaSessione(s){sessione.s=s;if(s)ls.set(SKEY,JSON.stringify(s));else ls.del(SKEY);}
+async function sbErrore(r){
+  let t="";try{t=await r.text();}catch(e){}
+  let j={};try{j=JSON.parse(t)||{};}catch(e){}
+  const code=j.error_code||j.code;
+  let m=j.error_description||j.msg||j.message||j.error||t||("errore "+r.status);
+  if(code==="42501")m="Permesso negato: il tuo utente non può fare questa modifica.";
+  const e=new Error(String(m).slice(0,200));e.status=r.status;e.code=code;return e;
 }
-async function cloudPullData(cfg){
-  const h={apikey:cfg.key,Authorization:"Bearer "+cfg.key};
-  const r=await fetch(cfg.url.replace(/\/+$/,"")+"/rest/v1/app_state?id=eq.1&select=data,updated_at",{headers:h});
-  if(!r.ok)throw new Error("HTTP "+r.status);
-  const j=await r.json();return (j&&j[0])?j[0]:null;
+async function sbFetch(url,opt){
+  try{return await fetch(url,opt);}
+  catch(e){throw new Error("Nessuna connessione con il database: controlla internet.");}
+}
+function nuovaSessione(cfg,j,prec){
+  const u=j.user||(prec&&prec.user)||{};
+  return {url:cfg.url,access_token:j.access_token,refresh_token:j.refresh_token,
+    expires_at:j.expires_at||Math.floor(Date.now()/1000)+(j.expires_in||3600),
+    user:{id:u.id,email:u.email},utente:prec?prec.utente:null};
+}
+async function sbLogin(cfg,email,password){
+  const r=await sbFetch(cfg.url+"/auth/v1/token?grant_type=password",{method:"POST",headers:{apikey:cfg.key,"Content-Type":"application/json"},body:JSON.stringify({email,password})});
+  if(!r.ok){
+    const e=await sbErrore(r);
+    if(e.code==="email_not_confirmed")e.message="Utente non confermato: in Supabase va creato con «Auto Confirm User».";
+    else if(r.status===400)e.message="Email o password non corretti.";
+    else if(r.status===401||r.status===403)e.message="Chiave del progetto non valida.";
+    else if(r.status===429)e.message="Troppi tentativi: riprova tra qualche minuto.";
+    throw e;
+  }
+  const s=nuovaSessione(cfg,await r.json());salvaSessione(s);return s;
+}
+async function sbToken(cfg,forza){
+  let s=sessione.s;
+  if(!s)throw Object.assign(new Error("Sessione scaduta: rientra."),{status:401});
+  const altra=leggiJSON(SKEY);   // un'altra scheda aperta può averla già rinnovata
+  if(altra&&altra.user&&altra.user.id===s.user.id&&altra.refresh_token!==s.refresh_token&&altra.expires_at>=s.expires_at){s=altra;sessione.s=altra;forza=false;}
+  if(!forza&&s.expires_at-60>Date.now()/1000)return s.access_token;
+  if(!sessione.rinnovo)sessione.rinnovo=(async()=>{
+    try{
+      const r=await sbFetch(cfg.url+"/auth/v1/token?grant_type=refresh_token",{method:"POST",headers:{apikey:cfg.key,"Content-Type":"application/json"},body:JSON.stringify({refresh_token:s.refresh_token})});
+      if(!r.ok){const e=await sbErrore(r);if(r.status===400||r.status===401){e.status=401;e.message="Sessione scaduta: rientra.";}throw e;}
+      const n=nuovaSessione(cfg,await r.json(),s);salvaSessione(n);return n.access_token;
+    }finally{sessione.rinnovo=null;}
+  })();
+  return sessione.rinnovo;
+}
+async function sbReq(cfg,path,{method="GET",body,prefer}={},riprova=true){
+  const h={apikey:cfg.key,Authorization:"Bearer "+await sbToken(cfg)};
+  if(body!==undefined)h["Content-Type"]="application/json";
+  if(prefer)h.Prefer=prefer;
+  const r=await sbFetch(cfg.url+path,{method,headers:h,body:body===undefined?undefined:JSON.stringify(body)});
+  if(r.status===401&&riprova){await sbToken(cfg,true);return sbReq(cfg,path,{method,body,prefer},false);}
+  if(!r.ok)throw await sbErrore(r);
+  const t=await r.text();return t?JSON.parse(t):null;
+}
+function sbEsci(cfg){
+  const s=sessione.s;salvaSessione(null);
+  if(s&&cloudOn(cfg))sbFetch(cfg.url+"/auth/v1/logout",{method:"POST",headers:{apikey:cfg.key,Authorization:"Bearer "+s.access_token}}).catch(()=>{});
+}
+const cloudUtente=async cfg=>{const r=await sbReq(cfg,"/rest/v1/utenti?select=nome,ruolo&id=eq."+encodeURIComponent(sessione.s.user.id));return r&&r[0]?r[0]:null;};
+const cloudVersione=async cfg=>{const r=await sbReq(cfg,"/rest/v1/app_state?id=eq.1&select=updated_at");return r&&r[0]?r[0].updated_at:null;};
+const cloudLeggi=async cfg=>{const r=await sbReq(cfg,"/rest/v1/app_state?id=eq.1&select=data,updated_at");return r&&r[0]?r[0]:null;};
+const cloudScrivi=async(cfg,data)=>{
+  const r=await sbReq(cfg,"/rest/v1/app_state?select=updated_at",{method:"POST",body:[{id:1,data,updated_at:new Date().toISOString()}],prefer:"resolution=merge-duplicates,return=representation"});
+  return r&&r[0]?r[0].updated_at:null;
+};
+const proposteLeggi=cfg=>sbReq(cfg,"/rest/v1/proposte?select=*&order=creata_il.desc&limit=100");
+const proposteInAttesa=cfg=>sbReq(cfg,"/rest/v1/proposte?select=id&stato=eq.in_attesa");
+const propostaInvia=(cfg,p)=>sbReq(cfg,"/rest/v1/proposte",{method:"POST",body:p,prefer:"return=minimal"});
+/* solo se ancora in attesa: se un altro dispositivo l'ha già decisa torna una lista vuota */
+const propostaDecidi=(cfg,id,stato,nota)=>sbReq(cfg,"/rest/v1/proposte?id=eq."+encodeURIComponent(id)+"&stato=eq.in_attesa",{method:"PATCH",body:{stato,nota:nota||null},prefer:"return=representation"});
+const SQL_UTENTE="insert into public.utenti (id, nome, ruolo)\nselect id, 'Mario Rossi', 'lettura' from auth.users\nwhere lower(email) = lower('mario.rossi@esempio.it')\non conflict (id) do update set nome = excluded.nome, ruolo = excluded.ruolo;";
+
+/* ---------- proposte di modifica: differenze tra due versioni dei dati ---------- */
+/* stessa sostanza anche se le chiavi sono in ordine diverso (il database le riordina) */
+const canon=x=>JSON.stringify(x,(k,v)=>v&&typeof v==="object"&&!Array.isArray(v)?Object.keys(v).sort().reduce((o,kk)=>{o[kk]=v[kk];return o;},{}):v)||"";
+const senzaValore=v=>v===undefined||v===null||v==="";
+const uguali=(a,b)=>(senzaValore(a)&&senzaValore(b))||canon(a)===canon(b);
+const isObj=x=>!!x&&typeof x==="object"&&!Array.isArray(x);
+const isColl=(a,b)=>[a,b].every(x=>Array.isArray(x)&&x.every(r=>isObj(r)&&!senzaValore(r.id)));
+const CAMPI_LOCALI=["files","fattFiles"];   // gli allegati stanno solo sul dispositivo di chi li ha caricati
+const senzaLocali=r=>{const o={...r};CAMPI_LOCALI.forEach(k=>delete o[k]);return o;};
+/* elenco di operazioni: agg/del/mod su schede con id (pratiche, clienti…), set su tutto il resto */
+function diffDati(a,b){
+  const ops=[];
+  const visita=(x,y,path)=>{
+    if(path.length&&uguali(x,y))return;
+    if(path.length===1&&isColl(x,y)){
+      const k=path[0],ma=new Map(x.map(r=>[r.id,r])),mb=new Map(y.map(r=>[r.id,r]));
+      y.forEach(r=>{
+        const o=ma.get(r.id);
+        if(!o){ops.push({t:"agg",k,id:r.id,v:senzaLocali(r)});return;}
+        if(JSON.stringify(o)===JSON.stringify(r))return;
+        new Set([...Object.keys(o),...Object.keys(r)]).forEach(f=>{if(!CAMPI_LOCALI.includes(f)&&!uguali(o[f],r[f]))ops.push({t:"mod",k,id:r.id,f,prima:o[f],dopo:r[f]});});
+      });
+      x.forEach(r=>{if(!mb.has(r.id))ops.push({t:"del",k,id:r.id,prima:senzaLocali(r)});});
+      return;
+    }
+    if(isObj(x)&&isObj(y)){new Set([...Object.keys(x),...Object.keys(y)]).forEach(k=>visita(x[k],y[k],[...path,k]));return;}
+    /* tabelle senza id (tariffe, costi): stesse righe → confronto riga per riga */
+    if(Array.isArray(x)&&Array.isArray(y)&&x.length===y.length&&x.every(isObj)&&y.every(isObj)){x.forEach((r,i)=>visita(r,y[i],[...path,i]));return;}
+    ops.push({t:"set",path,prima:x,dopo:y});
+  };
+  visita(a,b,[]);
+  return ops;
+}
+function applicaOps(db,ops){
+  const d=structuredClone(db),saltate=[];
+  ops.forEach(op=>{
+    if(op.t==="set"){
+      let o=d;op.path.slice(0,-1).forEach(k=>{if(o[k]===null||typeof o[k]!=="object")o[k]={};o=o[k];});
+      const k=op.path[op.path.length-1];if(op.dopo===undefined)delete o[k];else o[k]=structuredClone(op.dopo);
+      return;
+    }
+    if(!Array.isArray(d[op.k]))d[op.k]=[];
+    const arr=d[op.k],i=arr.findIndex(r=>r.id===op.id);
+    if(op.t==="agg"){if(i>=0)arr[i]={...arr[i],...structuredClone(op.v)};else arr.push(structuredClone(op.v));}
+    else if(op.t==="del"){if(i>=0)arr.splice(i,1);}
+    else if(op.t==="mod"){if(i<0){saltate.push(op);return;}if(op.dopo===undefined)delete arr[i][op.f];else arr[i][op.f]=structuredClone(op.dopo);}
+  });
+  return {db:migrate(d),saltate};
+}
+const valoreA=(db,path)=>path.reduce((o,k)=>o==null?undefined:o[k],db);
+/* "" se il dato è ancora come quando è stata fatta la proposta, altrimenti cosa è cambiato */
+function conflitto(db,op){
+  if(op.t==="set"){const ora=valoreA(db,op.path);return uguali(ora,op.prima)?"":"nel frattempo è diventato «"+fmtVal(ora,db)+"»";}
+  const r=(db[op.k]||[]).find(x=>x.id===op.id);
+  if(op.t==="agg")return r?"esiste già: verrà aggiornata":"";
+  if(op.t==="del")return r?"":"già eliminata";
+  if(!r)return "la scheda è stata eliminata nel frattempo";
+  return uguali(r[op.f],op.prima)?"":"nel frattempo è diventato «"+fmtVal(r[op.f],db)+"»";
+}
+const NOMI_COLL={pose:"Pratica",clienti:"Cliente",installatori:"Installatore",consulenti:"Consulente"};
+const NOMI_SEZ={tariffe:"Tariffe",costi:"Costi e margini",zoneMap:"Zone",imports:"Registro import",clima:"clima",termico:"termico",extra:"extra posa",extraVendita:"extra vendita"};
+const ETICHETTE={nContratto:"N. contratto",clienteId:"Cliente",consulente:"Consulente",installatore:"Installatore",dataApp:"Data appuntamento",
+  dataVendita:"Data firma contratto",importoVendita:"Importo vendita €",listino:"Listino di vendita",pagamento:"Pagamento",caparraEur:"Caparra €",
+  finRate:"Numero rate",finStato:"Esito finanziamento",finData:"Data esito finanziamento",finNote:"Note amministrazione",clima1:"Clima 1",clima2:"Clima 2",
+  clima3:"Clima 3",clima4:"Clima 4",termico:"Prodotto termico",modalitaConsegna:"Modalità consegna",dataConsegna:"Data consegna",preparazione:"Merce pronta",
+  finestraDa:"Finestra dal",finestraA:"Finestra al",dataPrevista:"Data posa prevista",dataInstallazione:"Data installazione",altriExtra:"Altri extra €",
+  saldato:"Saldo incassato",recesso:"Recesso",motivoRecesso:"Motivo recesso",fatturaInst:"Fattura installatore €",fatturaImponibile:"Imponibile fattura €",
+  addebitoStato:"Esito verifica extra",contattoPersonale:"Origine del contatto",note:"Note",noteInst:"Note per l'installatore",nome:"Nome",
+  referente:"Referente",piva:"CF / P.IVA",tel:"Telefono",email:"Email",pec:"PEC",indirizzo:"Indirizzo",comune:"Comune",cap:"CAP",provincia:"Provincia",
+  regioni:"Regioni",ruolo:"Ruolo",capoArea:"Capo area"};
+const parole=k=>{const s=String(k).replace(/([a-z])([A-Z0-9])/g,"$1 $2").replace(/_/g," ").toLowerCase();return s.charAt(0).toUpperCase()+s.slice(1);};
+const EXTRA_N={vex:"Extra {n} a contratto",vq:"Q.tà extra {n} a contratto",vp:"€ cliente extra {n}",ex:"Extra {n} posa",q:"Q.tà extra {n} posa"};
+const etichettaCampo=f=>{if(ETICHETTE[f])return ETICHETTE[f];const m=/^(vex|vq|vp|ex|q)(\d)$/.exec(f);return m?EXTRA_N[m[1]].replace("{n}",m[2]):parole(f);};
+function etichettaRec(db,k,id,v){
+  const r=v||(db[k]||[]).find(x=>x.id===id)||{};
+  let nome=r.nome||"";
+  if(k==="pose"){const cl=(db.clienti||[]).find(c=>c.id===r.clienteId);nome=[r.nContratto&&("n. "+r.nContratto),cl&&cl.nome].filter(Boolean).join(" · ");}
+  return (NOMI_COLL[k]||parole(k))+" "+(nome||"senza nome");
+}
+function fmtVal(v,db){
+  if(senzaValore(v))return "—";
+  if(typeof v==="boolean")return v?"sì":"no";
+  if(typeof v==="string"){
+    if(/^\d{4}-\d{2}-\d{2}$/.test(v))return fmtD(v);
+    for(const k of ["clienti","installatori","consulenti"]){const r=db&&(db[k]||[]).find(x=>x.id===v);if(r)return r.nome;}
+    return v.length>80?v.slice(0,80)+"…":v;
+  }
+  if(Array.isArray(v))return v.every(x=>!isObj(x)&&!Array.isArray(x))?v.join(", "):v.length+" righe";
+  if(isObj(v))return "(dati modificati)";
+  return String(v);
+}
+/* la scheda intera, quando la proposta la contiene (nuova o eliminata); per le modifiche si cerca nei dati */
+const schedaOp=op=>op.t==="agg"?op.v:op.t==="del"?op.prima:null;
+function descriviOps(ops,db){
+  const voci=[],visti=new Set();
+  ops.forEach(op=>{
+    const key=op.t==="set"?"s:"+op.path[0]:op.k+":"+op.id;
+    if(visti.has(key))return;visti.add(key);
+    if(op.t==="set")voci.push(NOMI_SEZ[op.path[0]]||parole(op.path[0]));
+    else voci.push((op.t==="agg"?"Nuova scheda ":op.t==="del"?"Eliminazione ":"")+etichettaRec(db,op.k,op.id,schedaOp(op)));
+  });
+  return voci.slice(0,3).join(", ")+(voci.length>3?" e altre "+(voci.length-3):"");
+}
+/* "clima › Mono 9 › Compenso": le righe delle tabelle si chiamano col loro nome, se ce l'hanno */
+function etichettaPath(db,path){
+  return path.slice(1).map((k,j)=>{
+    if(typeof k==="number"){const r=valoreA(db,path.slice(0,j+2));return (r&&(r.config||r.prodotto||r.voce||r.nome))||("riga "+(k+1));}
+    return NOMI_SEZ[k]||etichettaCampo(k);
+  }).join(" › ");
+}
+/* una riga della tabella di confronto: [scheda, campo, prima, dopo] */
+function rigaOp(op,db){
+  if(op.t==="set")return [NOMI_SEZ[op.path[0]]||parole(op.path[0]),etichettaPath(db,op.path)||"—",fmtVal(op.prima,db),fmtVal(op.dopo,db)];
+  const nome=etichettaRec(db,op.k,op.id,schedaOp(op));
+  if(op.t==="agg")return [nome,"nuova scheda","—",Object.entries(op.v||{}).filter(([f,v])=>f!=="id"&&!senzaValore(v)&&!isObj(v)&&!Array.isArray(v)).slice(0,6).map(([f,v])=>etichettaCampo(f)+": "+fmtVal(v,db)).join(" · ")||"—"];
+  if(op.t==="del")return [nome,"eliminazione","scheda presente","eliminata"];
+  return [nome,etichettaCampo(op.f),fmtVal(op.prima,db),fmtVal(op.dopo,db)];
 }
 
 /* ---------- lettura documenti (Anthropic API) ---------- */
@@ -1266,57 +1484,350 @@ function App(){
     return()=>{window.removeEventListener("beforeinstallprompt",h);window.removeEventListener("appinstalled",h2);};
   },[]);
   const doInstall=()=>{if(promptRef.current)promptRef.current.prompt();};
-  const up=fn=>setDb(d=>{const n=fn(structuredClone(d));return n;});
   const flash=m=>{setToast(m);setTimeout(()=>setToast(""),2200);};
-  const writePose=p=>up(d=>{const i=d.pose.findIndex(x=>x.id===p.id);if(i>=0)d.pose[i]=p;else d.pose.push(p);return d;});
-  // ---- cloud sync ----
+  // ---- cloud: accesso, ruolo e sincronizzazione ----
   const [cloud,setCloud]=useState(loadCloud);
   useEffect(()=>saveCloud(cloud),[cloud]);
+  const cfg=cloudCfg(cloud);
+  const conCloud=cloudOn(cfg);
+  const [sess,setSess]=useState(()=>sessione.s);
+  const [utente,setUtente]=useState(()=>sessione.s&&sessione.s.utente);
+  const [msgAccesso,setMsgAccesso]=useState("");
+  const [errUtente,setErrUtente]=useState("");
+  const [riprova,setRiprova]=useState(0);
+  const entrato=conCloud&&!!sess&&sess.url===cfg.url;
+  const admin=!conCloud||(!!utente&&utente.ruolo==="admin");
+  const ro=conCloud&&!admin;
+  const [stato,setStato]=useState("");            // "", "salvo", "ok", "errore"
+  const [pronto,setPronto]=useState(false);       // dati del cloud letti (o caricati) in questa sessione
+  const [cloudVuoto,setCloudVuoto]=useState(false);
+  const [proposte,setProposte]=useState([]);
+  const [nAttesa,setNAttesa]=useState(0);
+  const [bozza,setBozza]=useState(null);          // sola lettura: {da: dati di partenza, db: dati con le modifiche}
+  const [opsBozza,setOpsBozza]=useState([]);
   const dbRef=useRef(db);useEffect(()=>{dbRef.current=db;});
-  const lastSync=useRef("");
-  const pushNow=async()=>{await cloudPushData(cloud,dbRef.current);lastSync.current=JSON.stringify(dbRef.current);};
-  const pullNow=async()=>{const row=await cloudPullData(cloud);if(row&&row.data){const s=JSON.stringify(row.data);if(s!==JSON.stringify(dbRef.current)){lastSync.current=s;setDb(migrate(row.data));}return row;}return null;};
-  useEffect(()=>{if(!(cloudOn(cloud)&&cloud.auto))return;pullNow().catch(()=>{});const iv=setInterval(()=>pullNow().catch(()=>{}),15000);return()=>clearInterval(iv);},[cloud.url,cloud.key,cloud.auto]);
-  useEffect(()=>{if(!(cloudOn(cloud)&&cloud.auto))return;if(JSON.stringify(db)===lastSync.current)return;const t=setTimeout(()=>pushNow().catch(()=>{}),1800);return()=>clearTimeout(t);},[db,cloud.url,cloud.key,cloud.auto]);
-  const comp=useMemo(()=>db.pose.map(p=>({p,c:compute(p,db)})),[db]);
+  const tabRef=useRef(tab);
+  const lastSync=useRef("");      // i dati come sono sul cloud, in forma canonica
+  const versione=useRef(null);    // updated_at della riga sul cloud
+  const prontoRef=useRef(false);
+  const sporco=useRef(false);
+  const occupato=useRef(false);
+  const datiCloudQui=()=>{const st=leggiStato();return !!st&&st.url===cfg.url;};
+  const salvaStato=o=>{const st=leggiStato();ls.set(STATOKEY,JSON.stringify({...(st&&st.url===cfg.url?st:{}),...o,url:cfg.url}));};
+  /* modifiche dell'amministratore non ancora sul cloud: se la pagina si chiude prima, al prossimo avvio si salvano */
+  const segnaSporco=()=>{if(entrato&&!sporco.current&&datiCloudQui()){sporco.current=true;salvaStato({sporco:true});}};
+  /* chi è in sola lettura scrive su una bozza; l'amministratore (o l'app senza cloud) sui dati veri */
+  const setDati=v=>{
+    if(!ro){segnaSporco();return setDb(v);}
+    setBozza(b=>{const cur=b?b.db:dbRef.current;return {da:b?b.da:dbRef.current,db:typeof v==="function"?v(cur):v};});
+  };
+  const up=fn=>setDati(d=>fn(structuredClone(d)));
+  const writePose=p=>up(d=>{const i=d.pose.findIndex(x=>x.id===p.id);if(i>=0)d.pose[i]=p;else d.pose.push(p);return d;});
+  const datiVuoti=useMemo(()=>migrate({...JSON.parse(JSON.stringify(seed)),clienti:[],installatori:[],consulenti:[],pose:[],zoneMap:{},imports:[]}),[]);
+  const vista=ro&&!pronto&&!datiCloudQui()?datiVuoti:(bozza?bozza.db:db);
+  const comp=useMemo(()=>vista.pose.map(p=>({p,c:compute(p,vista)})),[vista]);
+  useEffect(()=>{
+    if(!bozza){setOpsBozza([]);return;}
+    const t=setTimeout(()=>setOpsBozza(diffDati(bozza.da,bozza.db)),300);
+    return()=>clearTimeout(t);
+  },[bozza]);
+  useEffect(()=>{   // chiudendo la pagina con una bozza non inviata il browser chiede conferma
+    if(!opsBozza.length)return;
+    const h=e=>{e.preventDefault();e.returnValue="";};
+    window.addEventListener("beforeunload",h);return()=>window.removeEventListener("beforeunload",h);
+  },[opsBozza.length]);
 
-  const NAV=[["dash","Cruscotto","◧"],["pose","Pose / Lavori","▤"],["agenda","Agenda","🗓"],["clienti","Clienti","👤"],["installatori","Installatori","🔧"],["zone","Zone","🗺"],["consulenti","Consulenti","🤝"],["tariffe","Tariffe & Prodotti","€"],["margini","Margini","%"],["importa","Importa da foto","📷"],["backup","Backup / Excel","⤓"]];
-  const titles={dash:["Cruscotto","La sintesi operativa: numeri, fasi e programmazione."],pose:["Pose / Lavori","Registra e segui ogni contratto fino all'installazione."],agenda:["Agenda interventi","Cosa fissare e cosa è imminente."],clienti:["Clienti",""],installatori:["Installatori","Anagrafica e compensi maturati."],zone:["Zone → Installatori","Provincia per provincia."],consulenti:["Consulenti","Ruoli, venduto e recessi."],tariffe:["Tariffe & Prodotti","Compensi posa ed extra, modificabili."],margini:["Margini","Prezzi di vendita, costi installatori e congruità degli extra."],importa:["Importa da foto","Fotografa il cartaceo: i dati si compilano da soli. Tu controlli e confermi."],backup:["Backup & Excel","Salva, ripristina, esporta."]};
+  const esci=(msg,forza)=>{
+    if(!forza&&bozza&&diffDati(bozza.da,bozza.db).length&&!confirm("Hai modifiche non inviate: uscendo vanno perse. Uscire lo stesso?"))return false;
+    sbEsci(cfg);setSess(null);setUtente(null);setBozza(null);setProposte([]);setNAttesa(0);
+    prontoRef.current=false;setPronto(false);lastSync.current="";versione.current=null;sporco.current=false;
+    setCloudVuoto(false);setStato("");setErrUtente("");setMsgAccesso(typeof msg==="string"?msg:"");setTab("dash");
+    return true;
+  };
+  const scaduta=e=>{if(e&&e.status===401){esci("Sessione scaduta: rientra.",true);return true;}return false;};
+  /* la prima volta che i dati del cloud prendono il posto di quelli di questo browser, se ne tiene una copia */
+  const segnaDatiCloud=()=>{
+    if(datiCloudQui())return;
+    if(ls.get(PKEY)===null)ls.set(PKEY,JSON.stringify(dbRef.current));
+    salvaStato({});
+  };
+  const applicaRiga=row=>{
+    const vuoto=!row||!isObj(row.data)||!Array.isArray(row.data.pose);
+    setCloudVuoto(vuoto);
+    if(vuoto)return;
+    if(admin&&prontoRef.current&&canon(dbRef.current)!==lastSync.current)return;   // prima si salvano le modifiche fatte qui
+    segnaDatiCloud();
+    const s=canon(row.data);
+    lastSync.current=s;versione.current=row.updated_at;
+    if(s!==canon(dbRef.current)){
+      const d=migrate(row.data);dbRef.current=d;setDb(d);
+      setBozza(b=>{if(!b)return b;const ops=diffDati(b.da,b.db);return ops.length?{da:d,db:applicaOps(d,ops).db}:null;});
+    }
+    salvaStato({versione:row.updated_at,sporco:false});
+    prontoRef.current=true;setPronto(true);
+  };
+  const leggiCloud=async forza=>{
+    if(!forza&&versione.current){const v=await cloudVersione(cfg);if(v===versione.current)return;}
+    applicaRiga(await cloudLeggi(cfg));
+  };
+  const salvaCloud=async()=>{
+    const d=dbRef.current,s=canon(d);
+    if(s===lastSync.current)return;
+    setStato("salvo");
+    const v=await cloudScrivi(cfg,d);
+    lastSync.current=s;versione.current=v;
+    if(canon(dbRef.current)===s){sporco.current=false;salvaStato({versione:v,sporco:false});}
+    setStato("ok");
+  };
+  /* l'amministratore aveva lasciato modifiche non salvate (pagina chiusa subito o senza connessione) */
+  const avvioAdmin=async()=>{
+    const st=leggiStato();
+    if(!(st&&st.url===cfg.url&&st.sporco))return leggiCloud(true);
+    const row=await cloudLeggi(cfg);
+    const vuoto=!row||!isObj(row.data)||!Array.isArray(row.data.pose);
+    if(vuoto||(row.updated_at!==st.versione&&!confirm("Su questo dispositivo ci sono modifiche che non erano state salvate sul cloud, ma nel frattempo i dati sul cloud sono cambiati.\n\nOK = tieni i dati di questo dispositivo (sostituiscono quelli sul cloud)\nAnnulla = usa i dati del cloud")))return applicaRiga(row);
+    prontoRef.current=true;setPronto(true);lastSync.current="";
+    await salvaCloud();
+  };
+  const caricaProposte=async()=>{
+    if(tabRef.current==="proposte"){const r=await proposteLeggi(cfg);const l=Array.isArray(r)?r:[];setProposte(l);setNAttesa(l.filter(p=>p.stato==="in_attesa").length);}
+    else{const r=await proposteInAttesa(cfg);setNAttesa(Array.isArray(r)?r.length:0);}
+  };
+  useEffect(()=>{   // chi è entrato e con quale ruolo
+    if(!entrato)return;
+    let vivo=true;setErrUtente("");
+    cloudUtente(cfg).then(u=>{
+      if(!vivo)return;
+      if(!u){esci("Questo utente non è abilitato all'app: chiedi all'amministratore.",true);return;}
+      setUtente(u);if(sessione.s)salvaSessione({...sessione.s,utente:u});
+    }).catch(e=>{
+      if(!vivo||scaduta(e))return;
+      setErrUtente(e.status===404||e.code==="PGRST205"||e.code==="42P01"?"Il database non è ancora preparato: va eseguito lo script supabase/setup.sql nel SQL Editor di Supabase.":e.message);
+    });
+    return()=>{vivo=false;};
+  },[entrato,sess&&sess.user&&sess.user.id,riprova]);
+  useEffect(()=>{   // ogni 15 secondi: salva le modifiche dell'amministratore o scarica quelle nuove
+    if(!entrato||!utente)return;
+    let vivo=true;
+    const giro=async()=>{
+      if(occupato.current||document.hidden)return;
+      occupato.current=true;
+      try{
+        if(!prontoRef.current)await (admin?avvioAdmin():leggiCloud(true));
+        else if(admin&&canon(dbRef.current)!==lastSync.current)await salvaCloud();
+        else await leggiCloud(false);
+        await caricaProposte();
+        if(vivo)setStato(s=>s==="salvo"?s:"ok");
+      }catch(e){if(vivo&&!scaduta(e))setStato("errore");}
+      finally{occupato.current=false;}
+    };
+    giro();
+    const iv=setInterval(giro,15000);
+    const vis=()=>{if(!document.hidden)giro();};
+    document.addEventListener("visibilitychange",vis);
+    return()=>{vivo=false;clearInterval(iv);document.removeEventListener("visibilitychange",vis);};
+  },[entrato,utente&&utente.ruolo]);
+  useEffect(()=>{   // le modifiche dell'amministratore vanno sul cloud dopo un attimo di pausa
+    if(!entrato||!admin||!pronto)return;
+    const t=setTimeout(async()=>{
+      if(occupato.current)return;
+      occupato.current=true;
+      try{await salvaCloud();}catch(e){if(!scaduta(e))setStato("errore");}
+      finally{occupato.current=false;}
+    },1500);
+    return()=>clearTimeout(t);
+  },[db,entrato,admin,pronto]);
+  useEffect(()=>{tabRef.current=tab;if(tab==="proposte"&&entrato&&utente)caricaProposte().catch(scaduta);},[tab]);
 
+  const inviaBozza=async()=>{
+    if(!bozza)return;
+    const inviata=bozza.db,ops=diffDati(bozza.da,inviata);
+    if(!ops.length){setBozza(null);return;}
+    try{
+      await propostaInvia(cfg,{descrizione:descriviOps(ops,inviata),modifiche:ops});
+      setBozza(b=>b&&b.db!==inviata?{da:inviata,db:b.db}:null);   // se intanto hai continuato a modificare, resta in bozza solo il nuovo
+      flash("Inviato: diventa effettivo quando l'amministratore approva");
+      caricaProposte().catch(()=>{});
+    }catch(e){if(!scaduta(e))alert("Invio non riuscito: "+e.message);}
+  };
+  const annullaBozza=()=>{if(confirm("Annullare le modifiche non inviate?"))setBozza(null);};
+  const approva=async p=>{
+    const ops=Array.isArray(p.modifiche)?p.modifiche:[];
+    const cambiati=ops.filter(op=>conflitto(dbRef.current,op)).length;
+    if(!confirm(cambiati?"Attenzione: "+(cambiati===1?"1 dato è cambiato":cambiati+" dati sono cambiati")+" dopo la proposta. Approvando, vengono sostituiti con quelli proposti. Approvare?":"Approvare la proposta di "+(p.autore_nome||"utente")+"?"))return;
+    try{
+      const r=await propostaDecidi(cfg,p.id,"approvata");
+      if(!Array.isArray(r)||!r.length){flash("Questa proposta era già stata gestita");caricaProposte().catch(()=>{});return;}
+      ops.filter(o=>o.t==="del"&&o.k==="pose").forEach(o=>{const x=dbRef.current.pose.find(q=>q.id===o.id);if(x)[...(x.files||[]),...(x.fattFiles||[])].forEach(f=>{fileDel(f.id).catch(()=>{});});});
+      const {db:nuovo,saltate}=applicaOps(dbRef.current,ops);
+      segnaSporco();dbRef.current=nuovo;setDb(nuovo);
+      flash(saltate.length?"Approvata: "+saltate.length+" modifiche riguardavano schede eliminate e sono state saltate":"Proposta approvata");
+      try{await salvaCloud();}catch(e){if(!scaduta(e))setStato("errore");}
+      caricaProposte().catch(()=>{});
+    }catch(e){if(!scaduta(e))alert("Approvazione non riuscita: "+e.message);}
+  };
+  const rifiuta=async p=>{
+    const nota=prompt("Motivo del rifiuto (facoltativo, lo vedrà "+(p.autore_nome||"chi l'ha proposta")+"):","");
+    if(nota===null)return;
+    try{
+      const r=await propostaDecidi(cfg,p.id,"rifiutata",nota.trim());
+      flash(Array.isArray(r)&&r.length?"Proposta rifiutata":"Questa proposta era già stata gestita");
+      caricaProposte().catch(()=>{});
+    }catch(e){if(!scaduta(e))alert("Non riuscito: "+e.message);}
+  };
+  const caricaSulCloud=async()=>{
+    if(!confirm("Caricare sul cloud i dati di questo dispositivo ("+db.pose.length+" pratiche, "+db.clienti.length+" clienti)? Da quel momento saranno i dati condivisi con gli altri utenti."))return;
+    try{segnaDatiCloud();lastSync.current="";await salvaCloud();prontoRef.current=true;setPronto(true);setCloudVuoto(false);flash("Dati caricati sul cloud");}
+    catch(e){if(!scaduta(e))alert("Caricamento non riuscito: "+e.message);}
+  };
+  const salvaOra=async()=>{try{lastSync.current="";await salvaCloud();flash("Dati salvati sul cloud");}catch(e){if(!scaduta(e))alert("Salvataggio non riuscito: "+e.message);}};
+  const ricarica=async()=>{
+    if(admin&&!confirm("Ricaricare i dati dal cloud? Le modifiche di questo dispositivo non ancora salvate andranno perse."))return;
+    try{prontoRef.current=false;await leggiCloud(true);flash("Dati ricaricati dal cloud");}catch(e){if(!scaduta(e))alert("Non riuscito: "+e.message);}
+  };
+  const collega=(url,key)=>{setMsgAccesso("");setCloud({url,key});};
+  const scollega=()=>{
+    if(!confirm("Scollegare questo dispositivo dal cloud? L'app tornerà a salvare i dati solo in questo browser."))return;
+    if(entrato&&!esci("",false))return;
+    if(datiCloudQui()){   // i dati di questo browser vengono dal cloud: non devono restare visibili senza password
+      let d=null;try{d=migrate(JSON.parse(ls.get(PKEY)));}catch(e){}
+      if(!d)d=JSON.parse(JSON.stringify(seed));
+      dbRef.current=d;setDb(d);ls.del(PKEY);
+    }
+    ls.del(STATOKEY);
+    setCloud({url:"",key:""});
+  };
+
+  const NAV=[["dash","Cruscotto","◧"],...(entrato&&utente?[["proposte",admin?"Approvazioni":"Le mie proposte","✓"]]:[]),["pose","Pose / Lavori","▤"],["agenda","Agenda","🗓"],["clienti","Clienti","👤"],["installatori","Installatori","🔧"],["zone","Zone","🗺"],["consulenti","Consulenti","🤝"],["tariffe","Tariffe & Prodotti","€"],["margini","Margini","%"],["importa","Importa da foto","📷"],["backup","Backup / Excel","⤓"]];
+  const titles={dash:["Cruscotto","La sintesi operativa: numeri, fasi e programmazione."],proposte:admin?["Approvazioni","Modifiche proposte da chi è in sola lettura: approva o rifiuta."]:["Le mie proposte","Le modifiche che hai inviato e il loro esito."],pose:["Pose / Lavori","Registra e segui ogni contratto fino all'installazione."],agenda:["Agenda interventi","Cosa fissare e cosa è imminente."],clienti:["Clienti",""],installatori:["Installatori","Anagrafica e compensi maturati."],zone:["Zone → Installatori","Provincia per provincia."],consulenti:["Consulenti","Ruoli, venduto e recessi."],tariffe:["Tariffe & Prodotti","Compensi posa ed extra, modificabili."],margini:["Margini","Prezzi di vendita, costi installatori e congruità degli extra."],importa:["Importa da foto","Fotografa il cartaceo: i dati si compilano da soli. Tu controlli e confermi."],backup:["Backup & Excel","Salva, ripristina, esporta."]};
+
+  if(conCloud&&!entrato)return <Accesso cfg={cfg} fisso={cloudFisso()} msg={msgAccesso} onEntra={s=>{setMsgAccesso("");setUtente(null);setSess(s);}} onScollega={scollega}/>;
+  if(conCloud&&!utente)return <Attesa err={errUtente} onRiprova={()=>setRiprova(n=>n+1)} onEsci={()=>esci("",true)}/>;
+  const t=titles[tab]||titles.dash;
   return (
+    <SoloLettura.Provider value={ro}>
     <div className="app">
       <aside className="side">
         <div className="brand"><img src={LOGO} alt="Arquati Eco Living" style={{width:"100%",maxWidth:200,background:"#fff",borderRadius:10,padding:"8px 10px",display:"block"}}/></div>
         <nav className="nav">{NAV.map(([k,l,i])=>(
-          <button key={k} className={tab===k?"on":""} onClick={()=>setTab(k)}><span className="ic">{i}</span>{l}</button>
+          <button key={k} className={tab===k?"on":""} onClick={()=>setTab(k)}><span className="ic">{i}</span>{l}{k==="proposte"&&nAttesa>0&&<span className="nbadge">{nAttesa}</span>}</button>
         ))}</nav>
-        <div className="foot">Gestione Pose · dati salvati nel tuo browser</div>
+        <div className="foot">Gestione Pose · {conCloud?"dati condivisi sul cloud":"dati salvati nel tuo browser"}</div>
       </aside>
       <main className="main">
-        <div className="top"><div><h1>{titles[tab][0]}</h1>{titles[tab][1]&&<div className="sub">{titles[tab][1]}</div>}</div>
-          <div style={{display:"flex",gap:8}}>
+        <div className="top"><div><h1>{t[0]}</h1>{t[1]&&<div className="sub">{t[1]}</div>}</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
             {canInstall&&<button className="btn gh" onClick={doInstall}>⤓ Installa app</button>}
             {tab==="pose"&&<button className="btn" onClick={()=>setEditP(emptyPose())}>+ Nuova pratica</button>}
+            {entrato&&<div className="chip" title={(sess.user.email||"")+" · "+STATO_TXT[stato]}>
+              <span className={"dot "+({ok:"ok",salvo:"wait",errore:"ko"}[stato]||"")}/>
+              <b>{utente.nome}</b><span className="hint">{admin?"amministratore":"sola lettura"}</span>
+              <button className="btn link sm" onClick={()=>esci()}>Esci</button>
+            </div>}
           </div>
         </div>
         <div className="wrap">
-          {tab==="dash"&&<Dash comp={comp} db={db}/>}
-          {tab==="pose"&&<Pose comp={comp} db={db} up={up} flash={flash} openPose={setEditP}/>}
+          {ro&&opsBozza.length>0&&<div className="avviso bozza">
+            <div><b>✎ {opsBozza.length===1?"1 modifica da inviare":opsBozza.length+" modifiche da inviare"}</b><div className="hint">{descriviOps(opsBozza,vista)}</div></div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button className="btn" onClick={inviaBozza}>Invia all'amministratore</button><button className="btn gh" onClick={annullaBozza}>Annulla</button></div>
+          </div>}
+          {ro&&!opsBozza.length&&<div className="avviso"><span>👁 <b>Sola lettura.</b> Puoi modificare come al solito: le modifiche restano in bozza finché non le invii e diventano effettive quando l'amministratore le approva.</span></div>}
+          {ro&&cloudVuoto&&<div className="avviso"><span>L'amministratore non ha ancora caricato i dati sul cloud.</span></div>}
+          {admin&&entrato&&cloudVuoto&&!pronto&&<div className="avviso">
+            <div><b>☁ Il cloud è ancora vuoto.</b><div className="hint">Carica i dati di questo dispositivo ({db.pose.length} pratiche, {db.clienti.length} clienti): diventano quelli condivisi con gli altri utenti.</div></div>
+            <button className="btn" onClick={caricaSulCloud}>Carica sul cloud</button>
+          </div>}
+          {admin&&entrato&&nAttesa>0&&tab==="dash"&&<div className="avviso"><span><b>{nAttesa===1?"1 proposta":nAttesa+" proposte"} di modifica</b> da approvare.</span><button className="btn" onClick={()=>setTab("proposte")}>Vedi</button></div>}
+          {tab==="dash"&&<Dash comp={comp} db={vista}/>}
+          {tab==="proposte"&&<Approvazioni proposte={proposte} admin={admin} db={vista} onApprova={approva} onRifiuta={rifiuta}/>}
+          {tab==="pose"&&<Pose comp={comp} db={vista} up={up} flash={flash} openPose={setEditP}/>}
           {tab==="agenda"&&<Agenda comp={comp} openPose={setEditP}/>}
-          {tab==="clienti"&&<Clienti db={db} comp={comp} up={up} flash={flash}/>}
-          {tab==="installatori"&&<Installatori db={db} comp={comp} up={up} flash={flash}/>}
-          {tab==="zone"&&<Zone db={db} up={up} flash={flash}/>}
-          {tab==="consulenti"&&<Consulenti db={db} comp={comp} up={up} flash={flash}/>}
-          {tab==="tariffe"&&<Tariffe db={db} up={up} flash={flash}/>}
-          {tab==="margini"&&<Margini db={db} setDb={setDb} comp={comp} openPose={setEditP} flash={flash}/>}
-          {tab==="importa"&&<Importa db={db} setDb={setDb} flash={flash}/>}
-          {tab==="backup"&&<Backup db={db} setDb={setDb} comp={comp} flash={flash} cloud={cloud} setCloud={setCloud} pushNow={pushNow} pullNow={pullNow}/>}
+          {tab==="clienti"&&<Clienti db={vista} comp={comp} up={up} flash={flash}/>}
+          {tab==="installatori"&&<Installatori db={vista} comp={comp} up={up} flash={flash}/>}
+          {tab==="zone"&&<Zone db={vista} up={up} flash={flash}/>}
+          {tab==="consulenti"&&<Consulenti db={vista} comp={comp} up={up} flash={flash}/>}
+          {tab==="tariffe"&&<Tariffe db={vista} up={up} flash={flash}/>}
+          {tab==="margini"&&<Margini db={vista} setDb={setDati} comp={comp} openPose={setEditP} flash={flash}/>}
+          {tab==="importa"&&<Importa db={vista} setDb={setDati} flash={flash}/>}
+          {tab==="backup"&&<Backup db={vista} setDb={setDati} comp={comp} flash={flash} admin={admin} conCloud={conCloud} entrato={entrato} utente={utente} email={sess&&sess.user.email}
+            fisso={cloudFisso()} stato={stato} onCollega={collega} onScollega={scollega} onEsci={()=>esci()} onSalva={salvaOra} onRicarica={ricarica}/>}
         </div>
       </main>
-      {editP&&<PoseForm p={editP} db={db} onChange={writePose} onClose={()=>setEditP(null)}/>}
+      {editP&&<PoseForm p={editP} db={vista} onChange={writePose} onClose={()=>setEditP(null)}/>}
       {toast&&<div className="toast">{toast}</div>}
     </div>
+    </SoloLettura.Provider>
   );
+}
+
+/* ---------- accesso e proposte ---------- */
+const STATO_TXT={"":"collegamento…",salvo:"salvataggio in corso…",ok:"dati sincronizzati",errore:"non connesso, riprovo tra poco"};
+function Accesso({cfg,fisso,msg,onEntra,onScollega}){
+  const [email,setEmail]=useState(()=>ls.get(UKEY)||"");
+  const [pw,setPw]=useState("");
+  const [err,setErr]=useState(msg||"");
+  const [busy,setBusy]=useState(false);
+  useEffect(()=>{if(msg)setErr(msg);},[msg]);
+  const entra=async e=>{
+    e.preventDefault();if(busy)return;
+    setErr("");setBusy(true);
+    try{const s=await sbLogin(cfg,email.trim(),pw);ls.set(UKEY,email.trim());onEntra(s);}
+    catch(er){setErr(er.message||"Accesso non riuscito.");setBusy(false);}
+  };
+  return(<div className="accesso">
+    <form className="card accbox" onSubmit={entra}>
+      <img src={LOGO} alt="Arquati Eco Living" className="acclogo"/>
+      <div><h2>Gestione Pose</h2><div className="hint">Entra con l'email e la password che ti ha dato l'amministratore.</div></div>
+      <div className="fld"><label>Email</label><input type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required autoFocus={!email}/></div>
+      <div className="fld"><label>Password</label><input type="password" autoComplete="current-password" value={pw} onChange={e=>setPw(e.target.value)} required autoFocus={!!email}/></div>
+      {err&&<div className="accerr">{err}</div>}
+      <button className="btn" type="submit" disabled={busy} style={{justifyContent:"center"}}>{busy?"Accesso in corso…":"Entra"}</button>
+      {!fisso&&<button type="button" className="btn link sm" onClick={onScollega}>Usa l'app senza cloud su questo dispositivo</button>}
+    </form>
+  </div>);
+}
+function Attesa({err,onRiprova,onEsci}){
+  return(<div className="accesso"><div className="card accbox">
+    <img src={LOGO} alt="Arquati Eco Living" className="acclogo"/>
+    {err?<><div className="accerr">{err}</div>
+      <div style={{display:"flex",gap:8}}><button className="btn" onClick={onRiprova}>Riprova</button><button className="btn gh" onClick={onEsci}>Esci</button></div></>
+    :<div className="hint">Verifico l'utente…</div>}
+  </div></div>);
+}
+const STATI_PROP={in_attesa:["In attesa","warm"],approvata:["Approvata",""],rifiutata:["Rifiutata","ko"]};
+const dataOra=t=>{if(!t)return "";const d=new Date(t);return d.toLocaleDateString("it-IT")+" alle "+d.toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"});};
+function Approvazioni({proposte,admin,db,onApprova,onRifiuta}){
+  const [vedi,setVedi]=useState("in_attesa");
+  const conta=s=>proposte.filter(p=>p.stato===s).length;
+  const lista=proposte.filter(p=>vedi==="tutte"||p.stato===vedi);
+  return(<>
+    <div className="filters">
+      {[["in_attesa","In attesa"],["approvata","Approvate"],["rifiutata","Rifiutate"],["tutte","Tutte"]].map(([k,l])=>(
+        <button key={k} className={"btn sm"+(vedi===k?"":" gh")} onClick={()=>setVedi(k)}>{l}{k==="tutte"?"":" ("+conta(k)+")"}</button>))}
+    </div>
+    {lista.length===0&&<div className="card"><div className="bd hint">{vedi==="in_attesa"?(admin?"Nessuna proposta da approvare.":"Nessuna proposta in attesa."):"Niente da mostrare."}</div></div>}
+    <div className="grid">{lista.map(p=>(<Proposta key={p.id} p={p} admin={admin} db={db} onApprova={onApprova} onRifiuta={onRifiuta}/>))}</div>
+  </>);
+}
+function Proposta({p,admin,db,onApprova,onRifiuta}){
+  const ops=Array.isArray(p.modifiche)?p.modifiche:[];
+  const [st,cls]=STATI_PROP[p.stato]||[p.stato,""];
+  const aperta=p.stato==="in_attesa";
+  return(<div className="card">
+    <h3><span>{p.descrizione||"Modifica"}</span><span className={"tag "+cls}>{st}</span></h3>
+    <div className="bd">
+      <div className="hint" style={{marginBottom:10}}>Proposta da <b>{p.autore_nome||"utente"}</b> il {dataOra(p.creata_il)}{p.deciso_il?" · "+(p.stato==="approvata"?"approvata":"rifiutata")+" il "+dataOra(p.deciso_il):""}</div>
+      <div className="tdiff-wrap"><table className="tdiff"><thead><tr><th>Scheda</th><th>Campo</th><th>Prima</th><th>Dopo</th></tr></thead><tbody>
+        {ops.map((op,i)=>{const [scheda,campo,prima,dopo]=rigaOp(op,db),conf=aperta&&admin?conflitto(db,op):"";
+          return(<tr key={i}><td>{scheda}</td><td>{campo}</td><td className="prima">{prima}</td><td className="dopo">{dopo}{conf&&<div className="conf">⚠ {conf}</div>}</td></tr>);})}
+      </tbody></table></div>
+      {p.nota&&<div className="hint" style={{marginTop:10}}>Nota dell'amministratore: <b>{p.nota}</b></div>}
+      {admin&&aperta&&<div style={{display:"flex",gap:10,marginTop:12,flexWrap:"wrap"}}>
+        <button className="btn" onClick={()=>onApprova(p)}>✓ Approva</button>
+        <button className="btn gh" onClick={()=>onRifiuta(p)}>✕ Rifiuta</button>
+      </div>}
+    </div>
+  </div>);
 }
 
 /* ---------- Cruscotto ---------- */
@@ -1542,6 +2053,7 @@ function Agenda({comp,openPose}){
 /* ---------- POSE ---------- */
 const emptyPose=()=>({id:uid(),nContratto:"",clienteId:"",consulente:"",dataApp:"",clima1:"",clima2:"",clima3:"",clima4:"",termico:"",importoVendita:"",listino:"",extraPrezzoCliente:"",vex1:"",vq1:"",vp1:"",vex2:"",vq2:"",vp2:"",vex3:"",vq3:"",vp3:"",vex4:"",vq4:"",vp4:"",vex5:"",vq5:"",vp5:"",contattoPersonale:"",provvPctManuale:"",provvNota:"",omaggioSu:"",pagamento:"",finStato:"",finData:"",finNote:"",caparraEur:"",finanziatoEur:"",finRate:"",saldoData:"",okPosa:"",okPosaData:"",addebitoStato:"",addebitoEur:"",fatturaInst:"",fatturaRegime:"",fatturaImponibile:"",fattFiles:[],fatturaNum:"",fatturaData:"",fatturaVoci:"",extraMateriali:"",installatore:"",dataVendita:"",recesso:"",motivoRecesso:"",preparazione:"",modalitaConsegna:"",dataConsegna:"",finestraTipo:"",finestraDa:"",finestraA:"",dataPrevista:"",dataInstallazione:"",ex1:"",q1:"",ex2:"",q2:"",ex3:"",q3:"",ex4:"",q4:"",ex5:"",q5:"",altriExtra:"",saldato:"",note:"",noteInst:"",link:""});
 function Pose({comp,db,up,flash,openPose}){
+  const ro=useContext(SoloLettura);
   const [q,setQ]=useState("");const [ff,setFf]=useState("");const [fi,setFi]=useState("");const [fm,setFm]=useState("");
   const totByContr=useMemo(()=>{const m={};comp.forEach(({p,c})=>{m[p.nContratto]=(m[p.nContratto]||0)+c.compensoInst;});return m;},[comp]);
   let rows=comp;
@@ -1549,7 +2061,7 @@ function Pose({comp,db,up,flash,openPose}){
   if(ff)rows=rows.filter(({c})=>c.fase===ff);
   if(fi)rows=rows.filter(({c})=>c.effInst===fi);
   if(fm)rows=rows.filter(({c})=>c.motivo===fm);
-  const del=id=>{if(confirm("Eliminare questa pratica?")){const pz=comp.find(x=>x.p.id===id);if(pz)[...(pz.p.files||[]),...(pz.p.fattFiles||[])].forEach(f=>{try{fileDel(f.id);}catch(e){}});up(d=>{d.pose=d.pose.filter(x=>x.id!==id);return d;});flash("Pratica eliminata");}};
+  const del=id=>{if(confirm("Eliminare questa pratica?")){const pz=comp.find(x=>x.p.id===id);if(pz&&!ro)[...(pz.p.files||[]),...(pz.p.fattFiles||[])].forEach(f=>{try{fileDel(f.id);}catch(e){}});up(d=>{d.pose=d.pose.filter(x=>x.id!==id);return d;});flash("Pratica eliminata");}};
   return(<>
     <div className="filters">
       <input placeholder="Cerca contratto, cliente, installatore…" value={q} onChange={e=>setQ(e.target.value)} style={{minWidth:260}}/>
@@ -1692,6 +2204,7 @@ function schedaCliente(cli,db,comp){
   printHTML("Scheda Cliente — "+(cli.nome||""),body);
 }
 function Attachments({files,onAdd,onRemove,label,accept,nota}){
+  const ro=useContext(SoloLettura);
   const [urls,setUrls]=useState({});
   useEffect(()=>{let alive=true;(async()=>{const made={};for(const f of files){if(!urls[f.id]){try{const b=await fileGet(f.id);if(b)made[f.id]=URL.createObjectURL(b);}catch(e){}}}if(alive&&Object.keys(made).length)setUrls(u=>({...u,...made}));})();return()=>{alive=false;};},[files]);
   const pick=e=>{const fs=[...e.target.files];if(fs.length)onAdd(fs);e.target.value="";};
@@ -1701,12 +2214,13 @@ function Attachments({files,onAdd,onRemove,label,accept,nota}){
         return(<div key={f.id} className="att">
           {img&&u?<img src={u} onClick={()=>window.open(u,"_blank")}/>:<div className="attv" onClick={()=>u&&window.open(u,"_blank")}>{vid?"🎬":"📄"}</div>}
           <div className="attname" title={f.name}>{f.name}</div>
-          <button type="button" className="attx" title="Rimuovi" onClick={()=>onRemove(f)}>✕</button>
+          {!ro&&<button type="button" className="attx" title="Rimuovi" onClick={()=>onRemove(f)}>✕</button>}
         </div>);})}
     </div>}
+    {ro?<div className="hint">Gli allegati li aggiunge l'amministratore e restano sul suo dispositivo.</div>:<>
     <label className="btn gh sm" style={{cursor:"pointer",display:"inline-flex"}}>{label||"+ Carica foto/video"}
       <input type="file" accept={accept||"image/*,video/*"} multiple capture="environment" style={{display:"none"}} onChange={pick}/></label>
-    <div className="hint" style={{marginTop:5}}>{nota||"Salvati in questo dispositivo. Per la copia di sicurezza usa «Backup completo (ZIP)»."}</div>
+    <div className="hint" style={{marginTop:5}}>{nota||"Salvati in questo dispositivo. Per la copia di sicurezza usa «Backup completo (ZIP)»."}</div></>}
   </div>);
 }
 function DateField({value,onChange}){
@@ -3036,10 +3550,15 @@ function Importa({db,setDb,flash}){
 }
 
 /* ---------- Backup ---------- */
-function Backup({db,setDb,comp,flash,cloud,setCloud,pushNow,pullNow}){
+function Backup({db,setDb,comp,flash,admin,conCloud,entrato,utente,email,fisso,stato,onCollega,onScollega,onEsci,onSalva,onRicarica}){
   const fileRef=useRef();
+  const [url,setUrl]=useState("");const [key,setKey]=useState("");
+  const prima=ls.get(PKEY);
+  const condivisi=m=>confirm(m+(conCloud?"\n\nAttenzione: i dati sono condivisi sul cloud, il cambiamento vale per tutti gli utenti.":""));
+  const scaricaPrima=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([prima],{type:"application/json"}));a.download="arquati_dati_prima_del_cloud.json";a.click();};
+  const usaPrima=()=>{if(!condivisi("Rimettere i dati com'erano su questo dispositivo prima del collegamento al cloud?"))return;try{setDb(migrate(JSON.parse(prima)));flash("Copia ripristinata");}catch(e){alert("Copia non leggibile");}};
   const expJSON=()=>{const blob=new Blob([JSON.stringify(db,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="arquati_backup_"+today()+".json";a.click();flash("Backup JSON scaricato");};
-  const impJSON=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=migrate(JSON.parse(r.result));setDb(d);flash("Dati importati");}catch(err){alert("File non valido");}};r.readAsText(f);};
+  const impJSON=e=>{const f=e.target.files[0];e.target.value="";if(!f||!condivisi("Ripristinare i dati da «"+f.name+"»? Sostituiscono quelli attuali."))return;const r=new FileReader();r.onload=()=>{try{const d=migrate(JSON.parse(r.result));setDb(d);flash("Dati importati");}catch(err){alert("File non valido");}};r.readAsText(f);};
   const expXLSX=()=>{
     const wb=XLSX.utils.book_new();
     const pose=comp.map(({p,c})=>({"N. contratto":p.nContratto,Fase:c.fase,Cliente:c.cliente,Comune:c.comune,Provincia:c.provincia,Consulente:p.consulente,"Data appuntamento":p.dataApp,"Clima 1":p.clima1,"Clima 2":p.clima2,"Clima 3":p.clima3,"Clima 4":p.clima4,"Prodotto Termico":p.termico,Ambito:c.ambito,"Importo vendita":+p.importoVendita||0,Installatore:c.effInst,"Data vendita":p.dataVendita,"Pagamento":p.pagamento||"","Esito finanziamento":p.finStato||"","Data esito finanz.":p.finData||"","Caparra €":p.caparraEur||"","Data caparra":p.caparraEur?(p.dataVendita||""):"","Data saldo":p.saldoData||"","OK posa":p.okPosa||"","Data OK posa":p.okPosaData||"","Note amministrazione":p.finNote||"","Programmata senza OK":c.programmataSenzaOk?"Sì":"","Scad. recesso":c.scadRecesso,Recesso:p.recesso,"Motivo recesso":c.motivo,Listino:p.listino,"di cui extra":c.margine.extraCliente,"Prezzo prodotto":Math.round(c.margine.prezzoProdotto*100)/100,"Fattura totale":c.margine.fattLordo===null?"":c.margine.fattLordo,"Regime IVA fattura":c.margine.fattLordo===null?"":c.margine.regime,"Fattura imponibile":c.margine.fattura===null?"":Math.round(c.margine.fattura*100)/100,"N. fattura":p.fatturaNum||"","Data fattura":p.fatturaData||"","Fattura allegata":(p.fattFiles||[]).length?"Sì":"No","Extra fatturati":c.margine.extraFatturato||"","Scostamento extra":c.margine.scostamento===null?"":c.margine.scostamento,"Venduto netto":Math.round(c.margine.netto*100)/100,"Costo materiali":Math.round(c.margine.materiali*100)/100,"Extra materiali":c.margine.extraMat,"Prezzo minimo":c.margine.prezzoCodice,"Prezzo listino":c.margine.prezzoListino,"Posizione prezzo":c.margine.posizione,"Sopra il minimo":c.margine.sopraCodice,"Provv. imponibile":Math.round((c.margine.provv.base||0)*100)/100,"Provv. %":c.margine.provv.pct===null?"":c.margine.provv.pct,"Provvigione €":c.margine.provv.pct===null?"":Math.round(c.margine.provv.eur*100)/100,"Extra 1":p.vex1||"","Q.tà 1":p.vex1?(p.vq1||1):"","€ 1":p.vex1?(p.vp1||""):"","Extra 2":p.vex2||"","Q.tà 2":p.vex2?(p.vq2||1):"","€ 2":p.vex2?(p.vp2||""):"","Extra 3":p.vex3||"","Q.tà 3":p.vex3?(p.vq3||1):"","€ 3":p.vex3?(p.vp3||""):"","Extra 4":p.vex4||"","Q.tà 4":p.vex4?(p.vq4||1):"","€ 4":p.vex4?(p.vp4||""):"","Extra 5":p.vex5||"","Q.tà 5":p.vex5?(p.vq5||1):"","€ 5":p.vex5?(p.vp5||""):"","Extra dichiarati a contratto €":Math.round(c.margine.extraCliente*100)/100,"Scarto quantità €":c.margine.gapQta?Math.round(c.margine.gapQta*100)/100:"","Base addebito":c.margine.addebitoFonte||"","Addebito extra €":c.margine.addebito?Math.round(c.margine.addebito*100)/100:"","Addebito proposto €":c.margine.addebitoProposto?Math.round(c.margine.addebitoProposto*100)/100:"","Esito addebito":c.margine.addebitoStato||(c.margine.addebitoDaValutare?"Da valutare":""),"Provvigione netta €":c.margine.provvNetta===null?"":Math.round(c.margine.provvNetta*100)/100,"Margine effettivo €":c.margine.okReale?Math.round(c.margine.eurReale*100)/100:"","Margine effettivo %":c.margine.okReale?Math.round(c.margine.pctReale*10)/10:"","Contatto personale":p.contattoPersonale==="Sì"?"Sì":"","Provv. liquidabile dal":p.dataInstallazione?addDays(p.dataInstallazione,15):"","Costo totale":Math.round(c.margine.costoTot*100)/100,"Margine €":c.margine.ok?Math.round(c.margine.eur*100)/100:"","Margine %":c.margine.ok?Math.round(c.margine.pct*10)/10:"","Dati mancanti":c.margine.mancano.join("; "),Preparazione:p.preparazione,"Modalità consegna":p.modalitaConsegna,"Data consegna":p.dataConsegna,"Periodo posa":c.finestra,"Periodo dal":p.finestraDa,"Periodo al":p.finestraA,"Stato periodo":c.finestraStato,"Data prevista":p.dataPrevista,"Data installazione":p.dataInstallazione,FASE:c.fase,"Compenso posa":c.compensoStd,"Extra":c.extraTot,"Posa extra 1":p.ex1||"","Posa q.tà 1":p.ex1?(p.q1||1):"","Posa extra 2":p.ex2||"","Posa q.tà 2":p.ex2?(p.q2||1):"","Posa extra 3":p.ex3||"","Posa q.tà 3":p.ex3?(p.q3||1):"","Posa extra 4":p.ex4||"","Posa q.tà 4":p.ex4?(p.q4||1):"","Posa extra 5":p.ex5||"","Posa q.tà 5":p.ex5?(p.q5||1):"","Compenso installatore":c.compensoInst,"Cliente saldato":p.saldato,"Da programmare":c.daPian?"SÌ":"","Link foto/video":p.link,Note:p.note}));
@@ -3051,7 +3570,7 @@ function Backup({db,setDb,comp,flash,cloud,setCloud,pushNow,pullNow}){
     XLSX.writeFile(wb,"Gestione_Pose_"+today()+".xlsx");
     flash("Excel esportato");
   };
-  const reset=()=>{if(confirm("Cancellare TUTTI i dati e ripartire dagli esempi?")){localStorage.removeItem(KEY);setDb(JSON.parse(JSON.stringify(seed)));flash("Dati azzerati");}};
+  const reset=()=>{if(condivisi("Cancellare TUTTI i dati e ripartire dagli esempi?")){localStorage.removeItem(KEY);setDb(JSON.parse(JSON.stringify(seed)));flash("Dati azzerati");}};
   const zipRef=useRef();
   const expZIP=async()=>{
     try{
@@ -3067,6 +3586,7 @@ function Backup({db,setDb,comp,flash,cloud,setCloud,pushNow,pullNow}){
   };
   const impZIP=async e=>{
     const file=e.target.files[0];if(!file)return;
+    if(!condivisi("Ripristinare il backup «"+file.name+"»? Sostituisce i dati attuali.")){e.target.value="";return;}
     try{
       const zip=await JSZip.loadAsync(file);
       const dj=zip.file("data.json");if(!dj){alert("ZIP non valido (manca data.json)");return;}
@@ -3078,43 +3598,57 @@ function Backup({db,setDb,comp,flash,cloud,setCloud,pushNow,pullNow}){
     e.target.value="";
   };
   return(<div className="grid" style={{gap:16}}>
-    <div className="card"><h3>Sincronizzazione cloud <span className="tag" style={{background:cloudOn(cloud)?"var(--brand-soft)":"#eee",color:cloudOn(cloud)?"var(--brand-dk)":"#999"}}>{cloudOn(cloud)?(cloud.auto?"attiva (auto)":"configurata"):"non attiva"}</span></h3><div className="bd">
-      <p className="hint">Collega un database <b>Supabase</b> (gratuito) per lavorare sugli <b>stessi dati</b> da più dispositivi (tu e l'ufficio). Nota: foto/video restano sul dispositivo, non si sincronizzano.</p>
-      <div className="form" style={{gridTemplateColumns:"1fr"}}>
-        <div className="fld"><label>URL progetto Supabase</label><input value={cloud.url} onChange={e=>setCloud({...cloud,url:e.target.value})} placeholder="https://xxxxxxxx.supabase.co"/></div>
-        <div className="fld"><label>Chiave «anon public»</label><input value={cloud.key} onChange={e=>setCloud({...cloud,key:e.target.value})} placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."/></div>
-      </div>
-      <label style={{display:"flex",gap:8,alignItems:"center",marginTop:10}}><input type="checkbox" checked={cloud.auto} onChange={e=>setCloud({...cloud,auto:e.target.checked})}/> <span>Sincronizza automaticamente (ogni ~15 secondi)</span></label>
-      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:12}}>
-        <button className="btn" onClick={async()=>{try{await pushNow();flash("Dati inviati al cloud");}catch(e){alert("Errore invio: "+e.message);}}}>⤴ Salva sul cloud</button>
-        <button className="btn gh" onClick={async()=>{if(!confirm("Sovrascrivere i dati di questo dispositivo con quelli del cloud?"))return;try{const r=await pullNow();flash(r?"Dati caricati dal cloud":"Nessun dato ancora sul cloud");}catch(e){alert("Errore lettura: "+e.message);}}}>⤵ Carica dal cloud</button>
-      </div>
-      <p className="hint" style={{marginTop:10}}>Modello: l'ultima modifica salvata vince. Per un piccolo ufficio va bene; evitate di modificare la stessa pratica nello stesso momento.</p>
-      <details style={{marginTop:8}}><summary style={{cursor:"pointer",fontWeight:600,color:"var(--brand-dk)"}}>Come si configura (una volta sola, ~5 min)</summary>
+    <div className="card"><h3>Utenti e cloud <span className={"tag"+(conCloud?"":" warm")}>{conCloud?"collegato":"non attivo"}</span></h3><div className="bd">
+      {!conCloud&&<>
+        <p className="hint">Ora i dati sono salvati <b>solo in questo browser</b>. Collegando un database <b>Supabase</b> (gratuito) diventano condivisi e ognuno entra con la sua email e password: l'<b>amministratore</b> modifica tutto, chi è in <b>sola lettura</b> vede tutto e propone modifiche che l'amministratore approva.</p>
+        <div className="form" style={{gridTemplateColumns:"1fr",marginTop:10}}>
+          <div className="fld"><label>URL del progetto Supabase</label><input value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://xxxxxxxx.supabase.co"/></div>
+          <div className="fld"><label>Chiave pubblica (publishable o anon)</label><input value={key} onChange={e=>setKey(e.target.value)} placeholder="sb_publishable_… oppure eyJhbGciOi…"/></div>
+        </div>
+        <button className="btn" style={{marginTop:12}} disabled={!url.trim()||!key.trim()} onClick={()=>onCollega(url,key)}>Collega e accedi</button>
+      </>}
+      {entrato&&utente&&<>
+        <p style={{margin:"0 0 6px"}}>Sei entrato come <b>{utente.nome}</b> ({admin?"amministratore":"sola lettura"}) <span className="hint">· {email}</span></p>
+        <p className="hint" style={{margin:0}}>Stato: {STATO_TXT[stato]}. {admin?"Le tue modifiche vanno sul cloud da sole dopo un paio di secondi.":"Le tue modifiche diventano proposte per l'amministratore."}</p>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:12}}>
+          {admin&&<button className="btn" onClick={onSalva}>⤴ Salva ora sul cloud</button>}
+          {admin&&<button className="btn gh" onClick={onRicarica}>⤵ Ricarica dal cloud</button>}
+          <button className="btn gh" onClick={onEsci}>Esci</button>
+          {!fisso&&admin&&<button className="btn link" onClick={onScollega}>Scollega questo dispositivo</button>}
+        </div>
+      </>}
+      {admin&&<details style={{marginTop:14}}><summary style={{cursor:"pointer",fontWeight:600,color:"var(--brand-dk)"}}>Come si prepara il database (una volta sola, circa 10 minuti)</summary>
         <ol className="hint" style={{lineHeight:1.7,marginTop:8}}>
-          <li>Vai su <b>supabase.com</b>, registrati (gratis) e crea un nuovo progetto.</li>
-          <li>Menu <b>SQL Editor</b> → incolla ed esegui:<br/><code style={{display:"block",background:"#F3F6F1",padding:"8px",borderRadius:6,margin:"4px 0",whiteSpace:"pre-wrap"}}>create table app_state (id int primary key, data jsonb, updated_at timestamptz default now());{"\n"}insert into app_state (id, data) values (1, '{}');{"\n"}alter table app_state disable row level security;</code></li>
-          <li>Menu <b>Project Settings → API</b>: copia <b>Project URL</b> e la chiave <b>anon public</b> e incollale qui sopra.</li>
-          <li>Premi <b>Salva sul cloud</b> dal dispositivo che ha già i dati. Sugli altri dispositivi, inserisci gli stessi URL/chiave e premi <b>Carica dal cloud</b> (poi attiva l'auto).</li>
+          <li>Su <b>supabase.com</b> crea un account gratuito e un nuovo progetto (regione Europa).</li>
+          <li><b>Authentication → Users → Add user → Create new user</b>: un utente per persona, con email e password. Spunta <b>Auto Confirm User</b>.</li>
+          <li><b>SQL Editor</b>: incolla lo script <b>supabase/setup.sql</b> del progetto, scrivi le email degli utenti nel punto 6 e premi <b>Run</b>. In fondo devono comparire gli utenti con il loro ruolo.</li>
+          <li><b>Authentication → Sign In / Providers</b>: disattiva <b>Allow new users to sign up</b>, così nessun altro può registrarsi.</li>
+          <li>Copia l'URL del progetto e la chiave pubblica (<b>publishable</b> o <b>anon</b>: pulsante <b>Connect</b> in alto, oppure Project Settings → API) e incollali qui sopra. Mai la chiave segreta.</li>
+          <li>Entra come amministratore e premi <b>Carica sul cloud</b>: i dati di questo dispositivo diventano quelli condivisi.</li>
         </ol>
-        <p className="hint">Tieni riservati URL e chiave: chi li ha può leggere/scrivere i dati.</p>
-      </details>
+        <p className="hint">Per aggiungere un utente più avanti: crealo in Authentication → Users, poi nel SQL Editor esegui questo, con nome, ruolo (<b>admin</b> o <b>lettura</b>) ed email giusti:</p>
+        <code className="sql">{SQL_UTENTE}</code>
+        <p className="hint">Foto, video e fatture allegati restano sul dispositivo di chi li carica: non passano dal cloud.</p>
+      </details>}
+      {admin&&prima!==null&&<p className="hint" style={{marginTop:12}}>Su questo dispositivo c'è una copia dei dati com'erano prima del collegamento al cloud.{" "}
+        <button className="btn link sm" onClick={scaricaPrima}>Scarica copia</button>
+        {admin&&entrato&&<button className="btn link sm" onClick={usaPrima}>Usa questa copia</button>}</p>}
     </div></div>
     <div className="two">
     <div className="card"><h3>Salvataggio & ripristino</h3><div className="bd">
       <p className="hint"><b>Backup completo (ZIP)</b>: contiene dati <u>e</u> foto/video. È quello da usare per la copia di sicurezza e per spostarti su un altro PC/telefono.</p>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:6}}>
         <button className="btn" onClick={expZIP}>⤓ Backup completo (ZIP, con file)</button>
-        <button className="btn gh" onClick={()=>zipRef.current.click()}>⤒ Ripristina da ZIP</button>
+        {admin&&<button className="btn gh" onClick={()=>zipRef.current.click()}>⤒ Ripristina da ZIP</button>}
         <input ref={zipRef} type="file" accept=".zip,application/zip" style={{display:"none"}} onChange={impZIP}/>
       </div>
       <p className="hint" style={{marginTop:16}}>Backup rapido <b>solo dati</b> (JSON, leggero, senza foto/video):</p>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:6}}>
         <button className="btn gh" onClick={expJSON}>⤓ Solo dati (JSON)</button>
-        <button className="btn gh" onClick={()=>fileRef.current.click()}>⤒ Ripristina dati (JSON)</button>
+        {admin&&<button className="btn gh" onClick={()=>fileRef.current.click()}>⤒ Ripristina dati (JSON)</button>}
         <input ref={fileRef} type="file" accept="application/json" style={{display:"none"}} onChange={impJSON}/>
       </div>
-      <div style={{marginTop:18}}><button className="btn acc" onClick={reset}>Azzera tutto</button></div>
+      {admin&&<div style={{marginTop:18}}><button className="btn acc" onClick={reset}>Azzera tutto</button></div>}
     </div></div>
     <div className="card"><h3>Esporta in Excel</h3><div className="bd">
       <p className="hint">Genera un file .xlsx con tutti i fogli (Pose calcolate, Clienti, Installatori, Consulenti, Zone) da archiviare o condividere col commercialista.</p>
