@@ -265,6 +265,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
+const VERSIONE="1 ott 2026 · 3";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -1720,7 +1721,7 @@ function App(){
         <nav className="nav">{NAV.map(([k,l,i])=>(
           <button key={k} className={tab===k?"on":""} onClick={()=>setTab(k)}><span className="ic">{i}</span>{l}{k==="proposte"&&nAttesa>0&&<span className="nbadge">{nAttesa}</span>}</button>
         ))}</nav>
-        <div className="foot">Gestione Pose · {conCloud?"dati condivisi sul cloud":"dati salvati nel tuo browser"}</div>
+        <div className="foot">Gestione Pose · {conCloud?"dati condivisi sul cloud":"dati salvati nel tuo browser"}<br/>Versione {VERSIONE}</div>
       </aside>
       <main className="main">
         <div className="top"><div><h1>{t[0]}</h1>{t[1]&&<div className="sub">{t[1]}</div>}</div>
