@@ -181,15 +181,16 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .x{background:none;border:0;font-size:22px;color:var(--muted);line-height:1;padding:2px 6px}
 .x:hover{color:var(--accent)}
 /* form */
-.form{display:grid;grid-template-columns:repeat(2,1fr);gap:13px 16px}
+/* minmax(0,1fr): una tendina con una voce lunga non deve allargare la colonna oltre la finestra */
+.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px 16px}
 .form .full{grid-column:1/-1}
-.fld{display:flex;flex-direction:column;gap:5px}
+.fld{display:flex;flex-direction:column;gap:5px;min-width:0}
 .fld label{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
 .fld input,.fld select,.fld textarea{padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#fff}
 .fld input:focus,.fld select:focus,.fld textarea:focus{outline:2px solid var(--brand-soft);border-color:var(--brand)}
 .sec{grid-column:1/-1;font-family:'Space Grotesk';font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--brand-dk);border-bottom:2px solid var(--brand-soft);padding-bottom:5px;margin-top:6px}
-.slotrow{display:grid;grid-template-columns:1fr 70px;gap:8px;align-items:end}
-.slotrow3{display:grid;grid-template-columns:1fr 70px 90px;gap:8px;align-items:end}
+.slotrow{display:grid;grid-template-columns:minmax(0,1fr) 70px;gap:8px;align-items:end}
+.slotrow3{display:grid;grid-template-columns:minmax(0,1fr) 70px 90px;gap:8px;align-items:end}
 /* live compenso panel */
 .calc{grid-column:1/-1;background:var(--brand-soft);border:1px solid #CFE2CA;border-radius:12px;padding:14px 16px;display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:space-between}
 .calc .row{display:flex;gap:20px;flex-wrap:wrap}
@@ -216,7 +217,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .attx{position:absolute;top:3px;right:3px;width:20px;height:20px;border:0;border-radius:50%;background:rgba(24,35,28,.7);color:#fff;font-size:12px;line-height:1;cursor:pointer}
 .attx:hover{background:var(--accent)}
 @media(max-width:1000px){
-  .split{grid-template-columns:1fr}.form{grid-template-columns:1fr}.two{grid-template-columns:1fr}
+  .split{grid-template-columns:1fr}.form{grid-template-columns:minmax(0,1fr)}.two{grid-template-columns:1fr}
   .app{flex-direction:column}
   .side{width:100%;flex:none;height:auto;position:sticky;top:0;z-index:20}
   .brand{padding:11px 16px}
