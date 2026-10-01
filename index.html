@@ -190,6 +190,10 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .fld{display:flex;flex-direction:column;gap:5px;min-width:0}
 .fld label{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
 .fld input,.fld select,.fld textarea{padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#fff}
+/* Safari dà a tendine e campi data una larghezza minima propria: qui devono stare nella colonna */
+.fld input:not([type=checkbox]):not([type=radio]):not([type=file]),.fld select,.fld textarea{width:100%;min-width:0;max-width:100%}
+.fld input[type=date]{display:block;-webkit-min-logical-width:0}
+.form>*,.slotrow>*,.slotrow3>*{min-width:0}
 .fld input:focus,.fld select:focus,.fld textarea:focus{outline:2px solid var(--brand-soft);border-color:var(--brand)}
 .sec{grid-column:1/-1;font-family:'Space Grotesk';font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--brand-dk);border-bottom:2px solid var(--brand-soft);padding-bottom:5px;margin-top:6px}
 .slotrow{display:grid;grid-template-columns:minmax(0,1fr) 70px;gap:8px;align-items:end}
@@ -261,6 +265,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
+const VERSIONE="1 ott 2026 · 3";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -1716,7 +1721,7 @@ function App(){
         <nav className="nav">{NAV.map(([k,l,i])=>(
           <button key={k} className={tab===k?"on":""} onClick={()=>setTab(k)}><span className="ic">{i}</span>{l}{k==="proposte"&&nAttesa>0&&<span className="nbadge">{nAttesa}</span>}</button>
         ))}</nav>
-        <div className="foot">Gestione Pose · {conCloud?"dati condivisi sul cloud":"dati salvati nel tuo browser"}</div>
+        <div className="foot">Gestione Pose · {conCloud?"dati condivisi sul cloud":"dati salvati nel tuo browser"}<br/>Versione {VERSIONE}</div>
       </aside>
       <main className="main">
         <div className="top"><div><h1>{t[0]}</h1>{t[1]&&<div className="sub">{t[1]}</div>}</div>
