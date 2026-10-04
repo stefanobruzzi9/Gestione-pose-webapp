@@ -198,6 +198,9 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .sec{grid-column:1/-1;font-family:'Space Grotesk';font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--brand-dk);border-bottom:2px solid var(--brand-soft);padding-bottom:5px;margin-top:6px}
 .slotrow{display:grid;grid-template-columns:minmax(0,1fr) 70px;gap:8px;align-items:end}
 .slotrow3{display:grid;grid-template-columns:minmax(0,1fr) 70px 90px;gap:8px;align-items:end}
+/* la nota sotto la voce (prezzo cad.) non deve spingere giù le caselle accanto: spazio fisso sotto ogni riga */
+.slotrow3{padding-bottom:18px}.slotrow3>.fld:first-child{position:relative}
+.slotrow3>.fld:first-child>.hint{position:absolute;left:0;right:0;top:100%;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* live compenso panel */
 .calc{grid-column:1/-1;background:var(--brand-soft);border:1px solid #CFE2CA;border-radius:12px;padding:14px 16px;display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:space-between}
 .calc .row{display:flex;gap:20px;flex-wrap:wrap}
@@ -265,7 +268,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="4 ott 2026 · 5";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="4 ott 2026 · 6";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -1297,11 +1300,10 @@ function compute(p,db){
   const venditaExtra=[[p.vex1,p.vq1,p.vp1],[p.vex2,p.vq2,p.vp2],[p.vex3,p.vq3,p.vp3],[p.vex4,p.vq4,p.vp4],[p.vex5,p.vq5,p.vp5]]
     .filter(([v])=>!!v).map(([v,q,pr])=>{
       const qta=Number(q)||1,tar=tarDi(v),pu=prVendDi(v);
-      const man=(pr===""||pr===undefined||pr===null)?null:(+pr||0);
-      const listinoTot=pu===null?null:qta*pu;
+      /* prezzo sempre dal listino: niente importi scritti a mano */
+      const listinoTot=pu===null?null:Math.round(qta*pu);
       return {voce:v,qta,tar,costoPosa:qta*tar,prezzoUnit:pu,listinoTot,
-              importo:man!==null?man:(listinoTot||0),manuale:man!==null,
-              ignoto:man===null&&pu===null};
+              importo:listinoTot||0,manuale:false,ignoto:pu===null};
     });
   const venditaExtraIgnoti=venditaExtra.filter(r=>r.ignoto).map(r=>r.voce);
   const extraVendutoTot=venditaExtra.reduce((s,r)=>s+r.importo,0);
@@ -2308,41 +2310,34 @@ function PoseForm({p,db,onChange,onClose}){
   },[baseAddebito]);
 
   /* Cambiando listino (o passando da clima a termico) i prezzi degli extra cambiano:
-     le righe ancora automatiche si riallineano da sole. Quelle scritte a mano restano. */
+     gli importi si ricalcolano dal nuovo listino. */
   const cfgPrezzi=(f.listino||"")+"|"+(extraTerm?"T":"C");
   const cfgPrec=useRef(cfgPrezzi);
   useEffect(()=>{
     if(cfgPrec.current===cfgPrezzi)return;
-    const [oldLis,oldAmb]=cfgPrec.current.split("|");
     cfgPrec.current=cfgPrezzi;
     const patch={};
     [1,2,3,4,5].forEach(n=>{
       const v=f["vex"+n];if(!v)return;
       const q=Number(f["vq"+n])||1,cur=f["vp"+n];
-      const vecchio=prVendCfg(v,oldLis,oldAmb==="T");
       const nuovo=prVendCfg(v,f.listino,extraTerm);
-      const era=cur===""||cur===undefined||cur===null||(vecchio!==null&&+cur===Math.round(q*vecchio));
-      if(era)patch["vp"+n]=nuovo===null?"":String(Math.round(q*nuovo));
+      const val=nuovo===null?"":String(Math.round(q*nuovo));
+      if(String(cur??"")!==val)patch["vp"+n]=val;
     });
     if(Object.keys(patch).length)setM(patch);
   },[cfgPrezzi]);
-  /* l'importo si ricalcola da solo finché nessuno lo ha toccato a mano: se il campo
-     è vuoto o contiene ancora esattamente il valore automatico, si riscrive. */
-  const VSlot=(n)=>{const v=f["vex"+n]||"",q=Number(f["vq"+n])||1,pu=prVend(v),
-      cur=f["vp"+n],auto=pu===null?null:Math.round(q*pu),
-      libero=cur===""||cur===undefined||cur===null||(auto!==null&&+cur===auto),
-      manuale=!libero&&cur!==""&&cur!==undefined&&cur!==null;
+  /* € cliente = quantità × prezzo del listino della pratica: automatico, non si scrive a mano */
+  const VSlot=(n)=>{const v=f["vex"+n]||"",q=Number(f["vq"+n])||1,pu=prVend(v),auto=pu===null?null:Math.round(q*pu);
     const cambiaVoce=e=>{const nv=e.target.value,np=prVend(nv),nq=Number(f["vq"+n])||1;
-      setM({["vex"+n]:nv,["vq"+n]:nv?String(nq):"",["vp"+n]:(nv&&np!==null&&libero)?String(Math.round(nq*np)):(libero?"":cur)});};
-    const cambiaQta=e=>{const nq=Number(e.target.value)||0;
-      setM({["vq"+n]:e.target.value,...(libero&&pu!==null?{["vp"+n]:String(Math.round(nq*pu))}:{})});};
+      setM({["vex"+n]:nv,["vq"+n]:nv?String(nq):"",["vp"+n]:nv&&np!==null?String(Math.round(nq*np)):""});};
+    const cambiaQta=e=>{const nq=Number(e.target.value)||1;
+      setM({["vq"+n]:e.target.value,["vp"+n]:pu!==null&&v?String(Math.round(nq*pu)):""});};
     return (<div className="slotrow3">
       <div className="fld"><label>Extra {n} a contratto</label>
         <select value={v} onChange={cambiaVoce}><option value=""></option>{extraOpts.map(o=>(<option key={o}>{o}</option>))}</select>
-        {v&&<span className="hint">{!f.listino?"indica prima il listino di vendita":(pu!==null?(eur(pu)+" cad. · "+f.listino):"prezzo di vendita non a listino: scrivilo a mano")}</span>}</div>
+        {v&&<span className="hint">{!f.listino?"indica prima il listino di vendita":(pu!==null?(eur(pu)+" cad. · "+f.listino):"prezzo non a listino: caricalo in Tariffe & Prodotti")}</span>}</div>
       <div className="fld"><label>Q.tà</label><input type="number" min="0" value={f["vq"+n]||""} onChange={cambiaQta}/></div>
-      <div className="fld"><label>€ cliente</label><input type="number" value={cur===undefined||cur===null?"":cur} onChange={e=>set("vp"+n,e.target.value)} placeholder="0"/>
-        {manuale&&<span className="hint">modificato a mano</span>}</div>
+      <div className="fld"><label>€ cliente</label><input readOnly tabIndex={-1} value={v&&auto!==null?eur(auto):(v?"—":"")} style={{background:"#F7F9F6",textAlign:"right"}}/></div>
     </div>);};
   /* tariffa di posa della voce, secondo il mondo della pratica */
   const tarPosa=(v)=>{const t=(db.tariffe.extra||[]).find(x=>x.voce===v);if(!t)return null;
@@ -2522,8 +2517,8 @@ function PoseForm({p,db,onChange,onClose}){
             <span>{eur(r.importo)}</span></div>))}
           {c.margine.extraCorpo>0&&<div className="costrow"><span>Altri extra a corpo</span><span>{eur(c.margine.extraCorpo)}</span></div>}
           <div className="costrow tot"><span>Extra a carico del cliente — IVA 10% inclusa</span><span>{eur(c.margine.extraCliente)}</span></div>
-          {c.margine.venditaExtraIgnoti.length>0&&<p className="hint" style={{margin:"7px 0 0",color:"#A93A1B",fontWeight:600}}>Prezzo di vendita non ancora caricato per: {c.margine.venditaExtraIgnoti.join(", ")}. Scrivi l'importo a mano, oppure caricalo in Tariffe → Prezzi di vendita extra.</p>}
-          <p className="hint" style={{margin:"7px 0 0"}}>Prezzi presi dal listino di vendita della pratica ({f.listino||"da indicare"}), IVA 10% inclusa. Lasciando vuoto il campo € si usa il prezzo di listino. Questi euro <b>non sono margine</b>: servono a pagare l'installatore, che fattura al netto. Escono dal prezzo prodotto, quindi non gonfiano la fascia provvigionale.</p>
+          {c.margine.venditaExtraIgnoti.length>0&&<p className="hint" style={{margin:"7px 0 0",color:"#A93A1B",fontWeight:600}}>Prezzo di vendita non ancora caricato per: {c.margine.venditaExtraIgnoti.join(", ")}. Caricalo in Tariffe → Prezzi di vendita extra.</p>}
+          <p className="hint" style={{margin:"7px 0 0"}}>Prezzi presi dal listino di vendita della pratica ({f.listino||"da indicare"}), IVA 10% inclusa. Questi euro <b>non sono margine</b>: servono a pagare l'installatore, che fattura al netto. Escono dal prezzo prodotto, quindi non gonfiano la fascia provvigionale.</p>
         </div>
         <div className="fld full" style={{background:c.margine.prezzoNoto?"#F7F9F6":"#FFF7F5",border:"1px solid "+(c.margine.prezzoNoto?"var(--line)":"#E9B3A4"),borderRadius:10,padding:"10px 12px"}}>
           {c.margine.prezzoNoto?<>
