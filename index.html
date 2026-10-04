@@ -705,7 +705,7 @@ function persist(db){try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){
    diventa effettiva quando l'amministratore la approva. I permessi li applica il
    database (supabase/setup.sql), per questo URL e chiave pubblica del progetto possono
    stare qui nel codice: senza email e password non si legge niente. */
-const CLOUD_FISSO={url:"https://yphcoqpivbmwtciqwrcu.supabase.co",key:""};   // key: chiave «anon public» del progetto
+const CLOUD_FISSO={url:"https://yphcoqpivbmwtciqwrcu.supabase.co",key:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlwaGNvcXBpdmJtd3RjaXF3cmN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4NTI5MzQsImV4cCI6MjEwNjQyODkzNH0.SzAiXoRGLwW0XtdFRDzIVtCz9CUznqdLyAVrQjZajkM"};   // key: chiave «anon public» del progetto
 const CKEY="arquati_cloud",SKEY="arquati_sessione",UKEY="arquati_ultimo_accesso",STATOKEY="arquati_cloud_stato",PKEY="arquati_dati_prima_del_cloud";
 const ls={get:k=>{try{return localStorage.getItem(k);}catch(e){return null;}},
   set:(k,v)=>{try{localStorage.setItem(k,v);return true;}catch(e){return false;}},
