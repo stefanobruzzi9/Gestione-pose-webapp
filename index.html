@@ -268,7 +268,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="4 ott 2026 · 7";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="4 ott 2026 · 8";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -2328,6 +2328,7 @@ function PoseForm({p,db,onChange,onClose}){
   },[cfgPrezzi]);
   /* € cliente = quantità × prezzo del listino della pratica: automatico, non si scrive a mano */
   const soloCifre=t=>String(t).replace(/\D/g,"").slice(0,4);   // quantità: solo numeri interi
+  const soloTastiNumero=e=>{if(["e","E","+","-",".",","].includes(e.key))e.preventDefault();};
   const VSlot=(n)=>{const v=f["vex"+n]||"",q=Number(f["vq"+n])||1,pu=prVend(v),auto=pu===null?null:Math.round(q*pu);
     const cambiaVoce=e=>{const nv=e.target.value,np=prVend(nv),nq=Number(f["vq"+n])||1;
       setM({["vex"+n]:nv,["vq"+n]:nv?String(nq):"",["vp"+n]:nv&&np!==null?String(Math.round(nq*np)):""});};
@@ -2337,7 +2338,7 @@ function PoseForm({p,db,onChange,onClose}){
       <div className="fld"><label>Extra {n} a contratto</label>
         <select value={v} onChange={cambiaVoce}><option value=""></option>{extraOpts.map(o=>(<option key={o}>{o}</option>))}</select>
         {v&&<span className="hint">{!f.listino?"indica prima il listino di vendita":(pu!==null?(eur(pu)+" cad. · "+f.listino):"prezzo non a listino: caricalo in Tariffe & Prodotti")}</span>}</div>
-      <div className="fld"><label>Q.tà</label><input type="text" inputMode="numeric" pattern="[0-9]*" disabled={!v} value={v?(f["vq"+n]||""):""} onChange={cambiaQta}/></div>
+      <div className="fld"><label>Q.tà</label><input type="number" min="1" step="1" inputMode="numeric" onKeyDown={soloTastiNumero} disabled={!v} value={v?(f["vq"+n]||""):""} onChange={cambiaQta}/></div>
       <div className="fld"><label>€ cliente</label><input readOnly tabIndex={-1} value={v&&auto!==null?eur(auto):(v?"—":"")} style={{background:"#F7F9F6",textAlign:"right"}}/></div>
     </div>);};
   /* tariffa di posa della voce, secondo il mondo della pratica */
@@ -2348,7 +2349,7 @@ function PoseForm({p,db,onChange,onClose}){
     return (<div className="slotrow3"><div className="fld"><label>Extra {n}</label>
       <select value={v} onChange={e=>{const nv=e.target.value;setM({["ex"+n]:nv,["q"+n]:nv?(f["q"+n]||"1"):""});}}><option value=""></option>{extraOpts.map(o=>(<option key={o}>{o}</option>))}</select>
       {v&&<span className="hint">{tp!==null?(eur(tp)+" cad. a tariffa"):"nessuna tariffa di posa per questa voce"}</span>}</div>
-    <div className="fld"><label>Q.tà</label><input type="text" inputMode="numeric" pattern="[0-9]*" disabled={!v} value={v?(f["q"+n]||""):""} onChange={e=>set("q"+n,soloCifre(e.target.value))}/></div>
+    <div className="fld"><label>Q.tà</label><input type="number" min="1" step="1" inputMode="numeric" onKeyDown={soloTastiNumero} disabled={!v} value={v?(f["q"+n]||""):""} onChange={e=>set("q"+n,soloCifre(e.target.value))}/></div>
     <div className="fld"><label>Costo posa</label><input readOnly value={v?(tp!==null?eur(q*tp):"—"):""} style={{background:"#F7F9F6",textAlign:"right"}}/></div></div>);};
   const idx=FASE_IDX[c.fase]||0;
   return(<div className="ovl" onClick={e=>{if(e.target.classList.contains("ovl"))onClose();}}>
