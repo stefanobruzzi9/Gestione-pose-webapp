@@ -265,7 +265,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="4 ott 2026 · 4";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="4 ott 2026 · 5";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -1526,19 +1526,13 @@ function App(){
   /* modifiche dell'amministratore non ancora sul cloud: se la pagina si chiude prima, al prossimo avvio si salvano */
   const segnaSporco=()=>{if(entrato&&!sporco.current&&datiCloudQui()){sporco.current=true;salvaStato({sporco:true});}};
   /* chi è in sola lettura scrive su una bozza; l'amministratore (o l'app senza cloud) sui dati veri */
-  /* chi è in sola lettura può solo provare modifiche alle pratiche esistenti (prodotti, prezzi, extra…)
-     per vedere come cambiano i margini: anagrafiche, tariffe e costi restano dell'amministratore */
   const bozzaRef=useRef(null);bozzaRef.current=bozza;
   const setDati=v=>{
     if(!ro){segnaSporco();return setDb(v);}
     const b=bozzaRef.current,cur=b?b.db:dbRef.current;
     const n=typeof v==="function"?v(cur):v;
-    const {pose:pn,...restoN}=n,{pose:pc,...restoC}=cur;
-    const pose=pc.map(x=>pn.find(y=>y.id===x.id)||x);
-    if(canon(restoN)!==canon(restoC)||pn.length!==pc.length||pn.some(y=>!pc.some(x=>x.id===y.id)))
-      flash("Clienti, installatori, consulenti, tariffe e nuove pratiche li gestisce solo l'amministratore.");
-    if(canon(pose)===canon(pc))return;
-    const nb={da:b?b.da:dbRef.current,db:{...cur,pose}};
+    if(canon(n)===canon(cur))return;
+    const nb={da:b?b.da:dbRef.current,db:n};
     bozzaRef.current=nb;setBozza(nb);
   };
   const up=fn=>setDati(d=>fn(structuredClone(d)));
@@ -1738,7 +1732,7 @@ function App(){
         <div className="top"><div><h1>{t[0]}</h1>{t[1]&&<div className="sub">{t[1]}</div>}</div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
             {canInstall&&<button className="btn gh" onClick={doInstall}>⤓ Installa app</button>}
-            {tab==="pose"&&!ro&&<button className="btn" onClick={()=>setEditP(emptyPose())}>+ Nuova pratica</button>}
+            {tab==="pose"&&<button className="btn" onClick={()=>setEditP(emptyPose())}>+ Nuova pratica</button>}
             {entrato&&<div className="chip" title={(sess.user.email||"")+" · "+STATO_TXT[stato]}>
               <span className={"dot "+({ok:"ok",salvo:"wait",errore:"ko"}[stato]||"")}/>
               <b>{utente.nome}</b><span className="hint">{admin?"amministratore":"sola lettura"}</span>
@@ -1751,7 +1745,7 @@ function App(){
             <div><b>✎ {opsBozza.length===1?"1 modifica da inviare":opsBozza.length+" modifiche da inviare"}</b><div className="hint">{descriviOps(opsBozza,vista)}</div></div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button className="btn" onClick={inviaBozza}>Invia all'amministratore</button><button className="btn gh" onClick={annullaBozza}>Annulla</button></div>
           </div>}
-          {ro&&!opsBozza.length&&<div className="avviso"><span>👁 <b>Sola lettura.</b> Nelle pratiche puoi provare a cambiare prodotti, prezzi ed extra e vedere subito i margini: restano prove su questo dispositivo finché non le invii, e diventano effettive solo se l'amministratore le approva.</span></div>}
+          {ro&&!opsBozza.length&&<div className="avviso"><span>👁 <b>Sola lettura.</b> Puoi provare qualsiasi modifica (pratiche, clienti, telefoni, installatori, tariffe…) e vedere subito i margini: restano prove su questo dispositivo finché non le invii, e diventano effettive solo se l'amministratore le approva.</span></div>}
           {ro&&cloudVuoto&&<div className="avviso"><span>L'amministratore non ha ancora caricato i dati sul cloud.</span></div>}
           {admin&&entrato&&cloudVuoto&&!pronto&&<div className="avviso">
             <div><b>☁ Il cloud è ancora vuoto.</b><div className="hint">Carica i dati di questo dispositivo ({db.pose.length} pratiche, {db.clienti.length} clienti): diventano quelli condivisi con gli altri utenti.</div></div>
