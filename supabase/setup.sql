@@ -108,11 +108,11 @@ create policy proposte_decisione on public.proposte for update to authenticated
 
 -- 6) Chi può entrare e con quale ruolo  ←  SOSTITUISCI LE DUE EMAIL
 insert into public.utenti (id, nome, ruolo)
-select id, 'Stefano', 'admin' from auth.users where lower(email) = lower('EMAIL-DI-STEFANO')
+select id, 'Stefano Bruzzi', 'admin' from auth.users where lower(email) = lower('EMAIL-DI-STEFANO')
 on conflict (id) do update set nome = excluded.nome, ruolo = excluded.ruolo;
 
 insert into public.utenti (id, nome, ruolo)
-select id, 'Amministrazione', 'lettura' from auth.users where lower(email) = lower('EMAIL-AMMINISTRAZIONE')
+select id, 'Angelica Argenti', 'lettura' from auth.users where lower(email) = lower('EMAIL-DI-ANGELICA')
 on conflict (id) do update set nome = excluded.nome, ruolo = excluded.ruolo;
 
 -- Controllo finale: devono comparire i due utenti con il loro ruolo
