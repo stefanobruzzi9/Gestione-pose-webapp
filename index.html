@@ -3560,6 +3560,191 @@ function Importa({db,setDb,flash}){
   </div>);
 }
 
+/* ---------- Esportazioni Excel ----------
+   Un file per ogni estrazione, da mandare a chi serve: le tre anagrafiche, le pose
+   divise per stato e il controllo margini delle installate per l'amministrazione. */
+const XL_EUR='#,##0.00 "€"';
+const XL_INTERNI=["id","source","batch","importedAt"];
+const xl2=n=>Math.round((+n||0)*100)/100;
+const xl1=n=>Math.round((+n||0)*10)/10;
+const xlAlfa=k=>(a,b)=>String(a[k]||"").localeCompare(String(b[k]||""),"it");
+/* i campi senza una colonna dedicata finiscono in coda: dall'anagrafica non si perde niente */
+const xlResto=(r,noti)=>{const o={};Object.keys(r).forEach(k=>{
+  if(noti.includes(k)||XL_INTERNI.includes(k)||k.startsWith("__"))return;
+  const v=r[k];o[etichettaCampo(k)]=Array.isArray(v)?v.join(", "):(v&&typeof v==="object"?JSON.stringify(v):v);});return o;};
+/* Un foglio leggibile: colonne larghe quanto serve, filtri sull'intestazione, importi in
+   euro e date vere, che in Excel si ordinano e si filtrano (non sono testo). La riga del
+   totale sta sotto una riga vuota, fuori dai filtri, così ordinando non si mescola. */
+function xlFoglio(righe,vuoto,totale){
+  if(!righe.length)return XLSX.utils.aoa_to_sheet([[vuoto||"Nessun dato da esportare"]]);
+  const keys=[];righe.forEach(r=>Object.keys(r).forEach(k=>{if(!keys.includes(k))keys.push(k);}));
+  const tutte=totale?[...righe,{},totale]:righe;
+  const ws=XLSX.utils.json_to_sheet(tutte,{header:keys});
+  const base=Date.UTC(1899,11,30);
+  for(let ri=1;ri<=tutte.length;ri++)keys.forEach((k,ci)=>{
+    const cell=ws[XLSX.utils.encode_cell({r:ri,c:ci})];if(!cell)return;
+    const d=cell.t==="s"&&/^(\d{4})-(\d{2})-(\d{2})$/.exec(cell.v);
+    if(d){cell.t="n";cell.v=(Date.UTC(+d[1],+d[2]-1,+d[3])-base)/864e5;cell.z="dd/mm/yyyy";}
+    else if(cell.t==="n"&&k.includes("€"))cell.z=XL_EUR;
+  });
+  ws["!cols"]=keys.map(k=>({wch:Math.min(42,Math.max(k.length,...tutte.map(r=>String(r[k]===undefined||r[k]===null?"":r[k]).length))+2)}));
+  ws["!autofilter"]={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:righe.length,c:keys.length-1}})};
+  return ws;
+}
+/* totale in fondo: gli importi si sommano, le percentuali si ricalcolano sui totali
+   (pesate), mai come media delle percentuali di riga */
+function xlTotale(righe,etichetta,pct){
+  const keys=Object.keys(righe[0]||{});const t={[keys[0]]:etichetta};
+  keys.forEach(k=>{const v=righe.filter(r=>typeof r[k]==="number");if(k.includes("€")&&v.length)t[k]=xl2(v.reduce((s,r)=>s+r[k],0));});
+  Object.entries(pct||{}).forEach(([k,[num,den]])=>{let a=0,b=0;
+    righe.forEach(r=>{if(typeof r[num]==="number"&&typeof r[den]==="number"){a+=r[num];b+=r[den];}});
+    t[k]=b?xl1(a/b*100):"";});
+  return t;
+}
+function xlScarica(nome,fogli){
+  const wb=XLSX.utils.book_new();
+  fogli.forEach(([n,ws])=>XLSX.utils.book_append_sheet(wb,ws,n.replace(/[:\\/?*[\]]/g," ").slice(0,31)));
+  XLSX.writeFile(wb,nome.replace(/[^\w.-]+/g,"_")+"_"+today()+".xlsx");
+}
+
+/* --- anagrafiche --- */
+function xlClienti(db){
+  const noti=["nome","referente","piva","tel","email","indirizzo","comune","provincia","cap","note"];
+  const per={};db.pose.forEach(p=>{if(p.clienteId)(per[p.clienteId]=per[p.clienteId]||[]).push(p);});
+  return [...db.clienti].sort(xlAlfa("nome")).map(r=>{const pr=per[r.id]||[];return {
+    "Cliente / Ragione sociale":r.nome||"",Referente:r.referente||"","Codice fiscale / P.IVA":r.piva||"",Telefono:r.tel||"",Email:r.email||"",
+    Indirizzo:r.indirizzo||"","Comune / Paese":r.comune||"",Provincia:r.provincia||"",CAP:r.cap||"",Note:r.note||"",
+    "N. pratiche":pr.length,"Contratti":pr.map(p=>p.nContratto).filter(Boolean).join(", "),...xlResto(r,noti)};});
+}
+function xlConsulenti(db,comp){
+  const noti=["nome","ruolo","capoArea","tel","email","regioni"];
+  return [...db.consulenti].sort(xlAlfa("nome")).map(r=>{const pr=comp.filter(({p})=>p.consulente===r.nome);
+    const n=f=>pr.filter(({c})=>f(c)).length;
+    const v=f=>xl2(pr.reduce((s,{p,c})=>s+(f(c)?(+p.importoVendita||0):0),0));
+    return {Consulente:r.nome||"",Ruolo:r.ruolo||"","Capo area":r.capoArea||"",Telefono:r.tel||"",Email:r.email||"",
+      "Regioni di competenza":(r.regioni||[]).join(", "),"N. pratiche":pr.length,"Da installare":n(xlDaInstallare),
+      Installate:n(c=>c.fase==="Installato"),Recessi:n(c=>c.fase==="RECESSO"),
+      "Venduto (IVA incl.) €":v(()=>true),"di cui in recesso €":v(c=>c.fase==="RECESSO"),...xlResto(r,noti)};});
+}
+function xlInstallatori(db,comp){
+  const noti=["nome","referente","tel","email","piva","pec","sede","regioni","note"];
+  const province=nome=>Object.keys(db.zoneMap).filter(k=>{const v=db.zoneMap[k];return Array.isArray(v)?v.includes(nome):v===nome;}).sort().join(", ");
+  return [...db.installatori].sort(xlAlfa("nome")).map(r=>{const pr=comp.filter(({c})=>c.effInst===r.nome);
+    const inst=pr.filter(({c})=>c.fase==="Installato");
+    return {"Installatore / Ragione sociale":r.nome||"",Referente:r.referente||"",Telefono:r.tel||"",Email:r.email||"",
+      "P.IVA / C.F.":r.piva||"",PEC:r.pec||"","Sede":r.sede||"","Regioni di competenza":(r.regioni||[]).join(", "),
+      "Province assegnate (zone)":province(r.nome),Note:r.note||"","Pose assegnate":pr.length,
+      "Da installare":pr.filter(({c})=>xlDaInstallare(c)).length,Installate:inst.length,
+      "Compenso totale €":xl2(pr.reduce((s,{c})=>s+c.compensoInst,0)),
+      "di cui su pose installate €":xl2(inst.reduce((s,{c})=>s+c.compensoInst,0)),...xlResto(r,noti)};});
+}
+
+/* --- pose per stato --- */
+const xlDaInstallare=c=>!!c.fase&&c.fase!=="Installato"&&c.fase!=="RECESSO";
+const XL_STATI=[
+  {k:"da",nome:"Da installare",file:"Pose_da_installare",f:xlDaInstallare},
+  {k:"inst",nome:"Installate",file:"Pose_installate",f:c=>c.fase==="Installato"},
+  {k:"rec",nome:"Recessi",file:"Pose_recessi",f:c=>c.fase==="RECESSO"},
+  {k:"tutte",nome:"Tutte le pose",file:"Pose_tutte",f:()=>true}];
+/* in ordine di avanzamento, e dentro la stessa fase le più recenti prima */
+const xlOrdina=rows=>[...rows].sort((a,b)=>((FASE_IDX[a.c.fase]??9)-(FASE_IDX[b.c.fase]??9))||
+  String(b.p.dataInstallazione||b.p.dataVendita||"").localeCompare(String(a.p.dataInstallazione||a.p.dataVendita||"")));
+const xlPosa=({p,c})=>({"N. contratto":p.nContratto,Fase:c.fase,Cliente:c.cliente,Comune:c.comune,Provincia:c.provincia,Consulente:p.consulente,"Data appuntamento":p.dataApp,"Clima 1":p.clima1,"Clima 2":p.clima2,"Clima 3":p.clima3,"Clima 4":p.clima4,"Prodotto Termico":p.termico,Ambito:c.ambito,"Importo vendita":+p.importoVendita||0,Installatore:c.effInst,"Data vendita":p.dataVendita,"Pagamento":p.pagamento||"","Esito finanziamento":p.finStato||"","Data esito finanz.":p.finData||"","Caparra €":p.caparraEur||"","Data caparra":p.caparraEur?(p.dataVendita||""):"","Data saldo":p.saldoData||"","OK posa":p.okPosa||"","Data OK posa":p.okPosaData||"","Note amministrazione":p.finNote||"","Programmata senza OK":c.programmataSenzaOk?"Sì":"","Scad. recesso":c.scadRecesso,Recesso:p.recesso,"Motivo recesso":c.motivo,Listino:p.listino,"di cui extra":c.margine.extraCliente,"Prezzo prodotto":Math.round(c.margine.prezzoProdotto*100)/100,"Fattura totale":c.margine.fattLordo===null?"":c.margine.fattLordo,"Regime IVA fattura":c.margine.fattLordo===null?"":c.margine.regime,"Fattura imponibile":c.margine.fattura===null?"":Math.round(c.margine.fattura*100)/100,"N. fattura":p.fatturaNum||"","Data fattura":p.fatturaData||"","Fattura allegata":(p.fattFiles||[]).length?"Sì":"No","Extra fatturati":c.margine.extraFatturato||"","Scostamento extra":c.margine.scostamento===null?"":c.margine.scostamento,"Venduto netto":Math.round(c.margine.netto*100)/100,"Costo materiali":Math.round(c.margine.materiali*100)/100,"Extra materiali":c.margine.extraMat,"Prezzo minimo":c.margine.prezzoCodice,"Prezzo listino":c.margine.prezzoListino,"Posizione prezzo":c.margine.posizione,"Sopra il minimo":c.margine.sopraCodice,"Provv. imponibile":Math.round((c.margine.provv.base||0)*100)/100,"Provv. %":c.margine.provv.pct===null?"":c.margine.provv.pct,"Provvigione €":c.margine.provv.pct===null?"":Math.round(c.margine.provv.eur*100)/100,"Extra 1":p.vex1||"","Q.tà 1":p.vex1?(p.vq1||1):"","€ 1":p.vex1?(p.vp1||""):"","Extra 2":p.vex2||"","Q.tà 2":p.vex2?(p.vq2||1):"","€ 2":p.vex2?(p.vp2||""):"","Extra 3":p.vex3||"","Q.tà 3":p.vex3?(p.vq3||1):"","€ 3":p.vex3?(p.vp3||""):"","Extra 4":p.vex4||"","Q.tà 4":p.vex4?(p.vq4||1):"","€ 4":p.vex4?(p.vp4||""):"","Extra 5":p.vex5||"","Q.tà 5":p.vex5?(p.vq5||1):"","€ 5":p.vex5?(p.vp5||""):"","Extra dichiarati a contratto €":Math.round(c.margine.extraCliente*100)/100,"Scarto quantità €":c.margine.gapQta?Math.round(c.margine.gapQta*100)/100:"","Base addebito":c.margine.addebitoFonte||"","Addebito extra €":c.margine.addebito?Math.round(c.margine.addebito*100)/100:"","Addebito proposto €":c.margine.addebitoProposto?Math.round(c.margine.addebitoProposto*100)/100:"","Esito addebito":c.margine.addebitoStato||(c.margine.addebitoDaValutare?"Da valutare":""),"Provvigione netta €":c.margine.provvNetta===null?"":Math.round(c.margine.provvNetta*100)/100,"Margine effettivo €":c.margine.okReale?Math.round(c.margine.eurReale*100)/100:"","Margine effettivo %":c.margine.okReale?Math.round(c.margine.pctReale*10)/10:"","Contatto personale":p.contattoPersonale==="Sì"?"Sì":"","Provv. liquidabile dal":p.dataInstallazione?addDays(p.dataInstallazione,15):"","Costo totale":Math.round(c.margine.costoTot*100)/100,"Margine €":c.margine.ok?Math.round(c.margine.eur*100)/100:"","Margine %":c.margine.ok?Math.round(c.margine.pct*10)/10:"","Dati mancanti":c.margine.mancano.join("; "),Preparazione:p.preparazione,"Modalità consegna":p.modalitaConsegna,"Data consegna":p.dataConsegna,"Periodo posa":c.finestra,"Periodo dal":p.finestraDa,"Periodo al":p.finestraA,"Stato periodo":c.finestraStato,"Data prevista":p.dataPrevista,"Data installazione":p.dataInstallazione,FASE:c.fase,"Compenso posa":c.compensoStd,"Extra":c.extraTot,"Posa extra 1":p.ex1||"","Posa q.tà 1":p.ex1?(p.q1||1):"","Posa extra 2":p.ex2||"","Posa q.tà 2":p.ex2?(p.q2||1):"","Posa extra 3":p.ex3||"","Posa q.tà 3":p.ex3?(p.q3||1):"","Posa extra 4":p.ex4||"","Posa q.tà 4":p.ex4?(p.q4||1):"","Posa extra 5":p.ex5||"","Posa q.tà 5":p.ex5?(p.q5||1):"","Compenso installatore":c.compensoInst,"Cliente saldato":p.saldato,"Da programmare":c.daPian?"SÌ":"","Link foto/video":p.link,Note:p.note});
+const xlPose=(comp,f)=>xlOrdina(comp.filter(({c})=>f(c))).map(xlPosa);
+
+/* --- controllo margini per l'amministrazione: le stesse voci del riquadro margine
+   della pratica, una riga per ogni posa installata --- */
+function xlFascia(V,K){
+  if(V.pct===null)return V.fonte==="sotto"?"Da autorizzare: venduto sotto il prezzo codice":"Non determinabile: manca il prezzo codice";
+  if(V.fonte==="manuale")return "% assegnata a mano "+V.pctBase+"%";
+  const mins=(Array.isArray(K.provvScala)&&K.provvScala.length?K.provvScala:DEF_PROVV_SCALA()).map(f=>+f.min).sort((a,b)=>a-b);
+  const su=mins.find(x=>x>V.soglia);
+  return (su===undefined?"≥"+V.soglia:V.soglia+"–"+String(xl1(su-0.1)).replace(".",","))+"% sopra codice → "+V.pctBase+"%";
+}
+const XL_POSIZIONE={sotto:"Sotto il prezzo codice",base:"Fra codice e listino",pieno:"Listino pieno o oltre"};
+const XL_ESITO={ok:"OK",warn:"Attenzione",bad:"Basso"};
+function xlMargine({p,c},K){
+  const m=c.margine,V=m.provv||{},noto=m.prezzoNoto;
+  return {
+    "N. contratto":p.nContratto||"",Cliente:c.cliente,Comune:c.comune,Provincia:c.provincia,Consulente:p.consulente||"",
+    Installatore:c.effInst,"Data firma contratto":p.dataVendita||"","Data installazione":p.dataInstallazione||"",
+    "Listino di vendita":p.listino||"",Prodotti:[...c.climaList,p.termico].filter(Boolean).join(" + "),
+    "Prezzo di vendita (IVA incl.) €":xl2(p.importoVendita),
+    "di cui extra a contratto €":xl2(m.extraCliente),
+    "di cui installazione omaggio €":xl2(m.omaggioInstallazione),
+    "Prezzo prodotto €":xl2(m.prezzoProdotto),
+    "Prezzo codice €":noto?xl2(m.prezzoCodice):"",
+    "Prezzo listino €":noto?xl2(m.prezzoListino):"",
+    "Sopra il prezzo codice €":noto&&m.prezzoProdotto?xl2(m.sopraCodice):"",
+    "Sopra il prezzo codice %":V.markup===null||V.markup===undefined?"":xl1(V.markup),
+    "Posizione prezzo":XL_POSIZIONE[m.posizione]||"",
+    "Imponibile provvigione (IVA scorporata) €":xl2(V.base),
+    "Fascia provvigionale":xlFascia(V,K),
+    "Contatto personale (punti)":V.bonus||"",
+    "Provvigione %":V.pct===null?"":V.pct,
+    "Provvigione €":V.pct===null?"":xl2(V.eur),
+    "Compenso posa €":xl2(c.compensoStd),
+    "Extra posa €":xl2(c.extraTot),
+    "Compenso installatore €":xl2(c.compensoInst),
+    "Fattura installatore (imponibile) €":m.fattura===null?"":xl2(m.fattura),
+    "Venduto netto (IVA scorporata) €":xl2(m.netto),
+    "Materiali €":xl2(m.materiali),
+    "Extra materiali €":xl2(m.extraMat),
+    "Trasporto €":xl2(m.trasporto),
+    "Posa (fattura o tariffa) €":xl2(m.posa),
+    ["Provvigioni di stima "+(+K.provvigioniPct||0)+"% €"]:xl2(m.provvigioni),
+    "Costi generali €":xl2(m.generali),
+    "Costo lead / marketing €":xl2(m.marketing),
+    "Costo totale €":xl2(m.costoTot),
+    "Margine della pratica €":m.ok?xl2(m.eur):"",
+    "Margine della pratica %":m.ok?xl1(m.pct):"",
+    "Provvigione reale €":m.okReale?xl2(m.provvReale):"",
+    "Addebito extra recuperato €":m.okReale&&m.addebitoApplicato?xl2(m.addebitoApplicato):"",
+    "Differenza rispetto alla stima €":m.okReale?xl2(m.provvDelta):"",
+    "Margine effettivo €":m.okReale?xl2(m.eurReale):"",
+    "Margine effettivo %":m.okReale?xl1(m.pctReale):"",
+    "Valutazione margine":m.okReale?(XL_ESITO[m.clsReale]||""):(m.ok?(XL_ESITO[m.cls]||"")+" (su stima)":""),
+    "Dati mancanti":[...m.mancano,...(V.manca?[V.manca]:[])].join("; ")};
+}
+function xlMargini(comp,db,mese){
+  const K=db.costi||DEF_COSTI();
+  const righe=comp.filter(({p,c})=>c.fase==="Installato"&&(!mese||String(p.dataInstallazione||"").slice(0,7)===mese))
+    .sort((a,b)=>String(a.p.dataInstallazione||"").localeCompare(String(b.p.dataInstallazione||"")))
+    .map(r=>xlMargine(r,K));
+  if(!righe.length)return {righe,totale:null};
+  const netto="Venduto netto (IVA scorporata) €";
+  return {righe,totale:xlTotale(righe,"TOTALE ("+righe.length+(righe.length===1?" posa)":" pose)"),{
+    "Sopra il prezzo codice %":["Sopra il prezzo codice €","Prezzo codice €"],
+    "Provvigione %":["Provvigione €","Imponibile provvigione (IVA scorporata) €"],
+    "Margine della pratica %":["Margine della pratica €",netto],
+    "Margine effettivo %":["Margine effettivo €",netto]})};
+}
+function xlLegenda(K){
+  const s=+K.provvigioniPct||0;
+  return XLSX.utils.aoa_to_sheet([["Colonna","Come si legge"],
+    ["Prezzo di vendita (IVA incl.)","L'importo del contratto firmato dal cliente, IVA inclusa."],
+    ["Listino di vendita","Arquati o Arquati ONE: da qui vengono prezzo codice e prezzo listino dei prodotti."],
+    ["di cui extra a contratto","Lavorazioni extra vendute al cliente: le rifattura l'installatore, quindi non sono prezzo prodotto."],
+    ["di cui installazione omaggio","L'installazione del climatizzatore in omaggio: è posa, non venduto."],
+    ["Prezzo prodotto","Prezzo di vendita meno extra e installazione omaggio. È quello che si confronta con codice e listino."],
+    ["Prezzo codice","Il prezzo minimo del listino indicato, sotto cui non si vende senza autorizzazione."],
+    ["Prezzo listino","Il prezzo pieno del listino indicato."],
+    ["Sopra il prezzo codice € / %","Quanto il prezzo prodotto supera il prezzo codice. Negativo = venduto sotto codice."],
+    ["Imponibile provvigione","Prezzo prodotto con l'IVA "+(+K.provvIvaPct||10)+"% scorporata: è la base della provvigione."],
+    ["Fascia / Provvigione","Dalla scala dell'Allegato E1_04.26 in base a quanto si è venduto sopra codice; +"+(+K.provvIntegrazione||0)+" punti se il contatto l'ha portato il consulente."],
+    ["Compenso installatore","Compenso di posa a tariffa più gli extra posati."],
+    ["Fattura installatore (imponibile)","Quando la fattura è arrivata, nel margine sostituisce il compenso a tariffa."],
+    ["Venduto netto","Prezzo di vendita con l'IVA "+(+K.ivaPct||0)+"% scorporata."],
+    ["Costo totale","Materiali + extra materiali + trasporto (1%) + posa + provvigioni di stima ("+s+"%) + costi generali + costo lead / marketing."],
+    ["Margine della pratica € / %","Venduto netto meno costo totale, con la provvigione di STIMA al "+s+"%."],
+    ["Provvigione reale","La provvigione vera della scala, al posto della stima al "+s+"%."],
+    ["Differenza rispetto alla stima","Provvigione reale meno stima. Negativo = si paga meno della stima e il margine sale."],
+    ["Margine effettivo € / %","Il margine della pratica ricalcolato con la provvigione reale, al netto degli addebiti extra recuperati dal consulente."],
+    ["Valutazione margine","OK dal "+(+K.sogliaOk||16)+"%, Attenzione dall'"+(+K.sogliaAllerta||8)+"%, sotto è Basso (soglie impostate nella sezione Margini). «Su stima» quando manca la provvigione reale."],
+    ["Dati mancanti","Cosa manca per calcolare il margine o la provvigione: in quel caso le colonne restano vuote."],
+    ["TOTALE","Gli importi sono sommati; le percentuali sono ricalcolate sui totali, solo sulle pratiche che le hanno."]]);
+}
+
 /* ---------- Backup ---------- */
 function Backup({db,setDb,comp,flash,admin,conCloud,entrato,utente,email,fisso,stato,onCollega,onScollega,onEsci,onSalva,onRicarica}){
   const fileRef=useRef();
@@ -3570,17 +3755,28 @@ function Backup({db,setDb,comp,flash,admin,conCloud,entrato,utente,email,fisso,s
   const usaPrima=()=>{if(!condivisi("Rimettere i dati com'erano su questo dispositivo prima del collegamento al cloud?"))return;try{setDb(migrate(JSON.parse(prima)));flash("Copia ripristinata");}catch(e){alert("Copia non leggibile");}};
   const expJSON=()=>{const blob=new Blob([JSON.stringify(db,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="arquati_backup_"+today()+".json";a.click();flash("Backup JSON scaricato");};
   const impJSON=e=>{const f=e.target.files[0];e.target.value="";if(!f||!condivisi("Ripristinare i dati da «"+f.name+"»? Sostituiscono quelli attuali."))return;const r=new FileReader();r.onload=()=>{try{const d=migrate(JSON.parse(r.result));setDb(d);flash("Dati importati");}catch(err){alert("File non valido");}};r.readAsText(f);};
-  const expXLSX=()=>{
-    const wb=XLSX.utils.book_new();
-    const pose=comp.map(({p,c})=>({"N. contratto":p.nContratto,Fase:c.fase,Cliente:c.cliente,Comune:c.comune,Provincia:c.provincia,Consulente:p.consulente,"Data appuntamento":p.dataApp,"Clima 1":p.clima1,"Clima 2":p.clima2,"Clima 3":p.clima3,"Clima 4":p.clima4,"Prodotto Termico":p.termico,Ambito:c.ambito,"Importo vendita":+p.importoVendita||0,Installatore:c.effInst,"Data vendita":p.dataVendita,"Pagamento":p.pagamento||"","Esito finanziamento":p.finStato||"","Data esito finanz.":p.finData||"","Caparra €":p.caparraEur||"","Data caparra":p.caparraEur?(p.dataVendita||""):"","Data saldo":p.saldoData||"","OK posa":p.okPosa||"","Data OK posa":p.okPosaData||"","Note amministrazione":p.finNote||"","Programmata senza OK":c.programmataSenzaOk?"Sì":"","Scad. recesso":c.scadRecesso,Recesso:p.recesso,"Motivo recesso":c.motivo,Listino:p.listino,"di cui extra":c.margine.extraCliente,"Prezzo prodotto":Math.round(c.margine.prezzoProdotto*100)/100,"Fattura totale":c.margine.fattLordo===null?"":c.margine.fattLordo,"Regime IVA fattura":c.margine.fattLordo===null?"":c.margine.regime,"Fattura imponibile":c.margine.fattura===null?"":Math.round(c.margine.fattura*100)/100,"N. fattura":p.fatturaNum||"","Data fattura":p.fatturaData||"","Fattura allegata":(p.fattFiles||[]).length?"Sì":"No","Extra fatturati":c.margine.extraFatturato||"","Scostamento extra":c.margine.scostamento===null?"":c.margine.scostamento,"Venduto netto":Math.round(c.margine.netto*100)/100,"Costo materiali":Math.round(c.margine.materiali*100)/100,"Extra materiali":c.margine.extraMat,"Prezzo minimo":c.margine.prezzoCodice,"Prezzo listino":c.margine.prezzoListino,"Posizione prezzo":c.margine.posizione,"Sopra il minimo":c.margine.sopraCodice,"Provv. imponibile":Math.round((c.margine.provv.base||0)*100)/100,"Provv. %":c.margine.provv.pct===null?"":c.margine.provv.pct,"Provvigione €":c.margine.provv.pct===null?"":Math.round(c.margine.provv.eur*100)/100,"Extra 1":p.vex1||"","Q.tà 1":p.vex1?(p.vq1||1):"","€ 1":p.vex1?(p.vp1||""):"","Extra 2":p.vex2||"","Q.tà 2":p.vex2?(p.vq2||1):"","€ 2":p.vex2?(p.vp2||""):"","Extra 3":p.vex3||"","Q.tà 3":p.vex3?(p.vq3||1):"","€ 3":p.vex3?(p.vp3||""):"","Extra 4":p.vex4||"","Q.tà 4":p.vex4?(p.vq4||1):"","€ 4":p.vex4?(p.vp4||""):"","Extra 5":p.vex5||"","Q.tà 5":p.vex5?(p.vq5||1):"","€ 5":p.vex5?(p.vp5||""):"","Extra dichiarati a contratto €":Math.round(c.margine.extraCliente*100)/100,"Scarto quantità €":c.margine.gapQta?Math.round(c.margine.gapQta*100)/100:"","Base addebito":c.margine.addebitoFonte||"","Addebito extra €":c.margine.addebito?Math.round(c.margine.addebito*100)/100:"","Addebito proposto €":c.margine.addebitoProposto?Math.round(c.margine.addebitoProposto*100)/100:"","Esito addebito":c.margine.addebitoStato||(c.margine.addebitoDaValutare?"Da valutare":""),"Provvigione netta €":c.margine.provvNetta===null?"":Math.round(c.margine.provvNetta*100)/100,"Margine effettivo €":c.margine.okReale?Math.round(c.margine.eurReale*100)/100:"","Margine effettivo %":c.margine.okReale?Math.round(c.margine.pctReale*10)/10:"","Contatto personale":p.contattoPersonale==="Sì"?"Sì":"","Provv. liquidabile dal":p.dataInstallazione?addDays(p.dataInstallazione,15):"","Costo totale":Math.round(c.margine.costoTot*100)/100,"Margine €":c.margine.ok?Math.round(c.margine.eur*100)/100:"","Margine %":c.margine.ok?Math.round(c.margine.pct*10)/10:"","Dati mancanti":c.margine.mancano.join("; "),Preparazione:p.preparazione,"Modalità consegna":p.modalitaConsegna,"Data consegna":p.dataConsegna,"Periodo posa":c.finestra,"Periodo dal":p.finestraDa,"Periodo al":p.finestraA,"Stato periodo":c.finestraStato,"Data prevista":p.dataPrevista,"Data installazione":p.dataInstallazione,FASE:c.fase,"Compenso posa":c.compensoStd,"Extra":c.extraTot,"Posa extra 1":p.ex1||"","Posa q.tà 1":p.ex1?(p.q1||1):"","Posa extra 2":p.ex2||"","Posa q.tà 2":p.ex2?(p.q2||1):"","Posa extra 3":p.ex3||"","Posa q.tà 3":p.ex3?(p.q3||1):"","Posa extra 4":p.ex4||"","Posa q.tà 4":p.ex4?(p.q4||1):"","Posa extra 5":p.ex5||"","Posa q.tà 5":p.ex5?(p.q5||1):"","Compenso installatore":c.compensoInst,"Cliente saldato":p.saldato,"Da programmare":c.daPian?"SÌ":"","Link foto/video":p.link,Note:p.note}));
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pose),"Lavori Pose");
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(db.clienti.map(({id,...r})=>r)),"Clienti");
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(db.installatori.map(({id,...r})=>r)),"Installatori");
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(db.consulenti.map(({id,...r})=>r)),"Consulenti");
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(Object.entries(db.zoneMap).map(([Provincia,v])=>({Provincia,Installatori:Array.isArray(v)?v.join(", "):(v||"")}))),"Zone");
-    XLSX.writeFile(wb,"Gestione_Pose_"+today()+".xlsx");
-    flash("Excel esportato");
-  };
+  const [faseXL,setFaseXL]=useState(FASI[0]);
+  const [meseXL,setMeseXL]=useState("");
+  const conta=f=>comp.filter(({c})=>f(c)).length;
+  const mesiInst=useMemo(()=>[...new Set(comp.filter(({p,c})=>c.fase==="Installato"&&p.dataInstallazione).map(({p})=>p.dataInstallazione.slice(0,7)))].sort().reverse(),[comp]);
+  const K=db.costi||DEF_COSTI();
+  const esporta=(nome,fogli,msg)=>{try{xlScarica(nome,fogli());flash(msg);}catch(e){alert("Errore nell'export Excel: "+e.message);}};
+  const fogliMargini=mese=>{const {righe,totale}=xlMargini(comp,db,mese);
+    return [["Controllo margini",xlFoglio(righe,"Nessuna posa installata"+(mese?" a "+meseLabel(mese):""),totale)],["Legenda",xlLegenda(K)]];};
+  const expClienti=()=>esporta("Anagrafica_clienti",()=>[["Clienti",xlFoglio(xlClienti(db),"Nessun cliente")]],"Anagrafica clienti esportata");
+  const expConsulenti=()=>esporta("Anagrafica_consulenti",()=>[["Consulenti",xlFoglio(xlConsulenti(db,comp),"Nessun consulente")]],"Anagrafica consulenti esportata");
+  const expInstallatori=()=>esporta("Anagrafica_installatori",()=>[["Installatori",xlFoglio(xlInstallatori(db,comp),"Nessun installatore")]],"Anagrafica installatori esportata");
+  const expStato=s=>esporta(s.file,()=>[[s.nome,xlFoglio(xlPose(comp,s.f),"Nessuna pratica in questo stato")]],"Pose esportate: "+s.nome.toLowerCase());
+  const expFase=()=>esporta("Pose_fase_"+faseXL,()=>[[faseXL,xlFoglio(xlPose(comp,c=>c.fase===faseXL),"Nessuna pratica in questa fase")]],"Pose esportate: "+faseXL);
+  const expMargini=()=>esporta("Controllo_margini_"+(meseXL?meseLabel(meseXL):"tutti_i_mesi"),()=>fogliMargini(meseXL),"Controllo margini esportato");
+  const expTutto=()=>esporta("Gestione_Pose",()=>[
+    ["Clienti",xlFoglio(xlClienti(db),"Nessun cliente")],
+    ["Consulenti",xlFoglio(xlConsulenti(db,comp),"Nessun consulente")],
+    ["Installatori",xlFoglio(xlInstallatori(db,comp),"Nessun installatore")],
+    ...[XL_STATI[3],XL_STATI[0],XL_STATI[1],XL_STATI[2]].map(s=>[s.nome,xlFoglio(xlPose(comp,s.f),"Nessuna pratica in questo stato")]),
+    ...fogliMargini(""),
+    ["Zone",xlFoglio(Object.entries(db.zoneMap).map(([Provincia,v])=>({Provincia,Installatori:Array.isArray(v)?v.join(", "):(v||"")})),"Nessuna zona assegnata")]
+  ],"Excel completo esportato");
   const reset=()=>{if(condivisi("Cancellare TUTTI i dati e ripartire dagli esempi?")){localStorage.removeItem(KEY);setDb(JSON.parse(JSON.stringify(seed)));flash("Dati azzerati");}};
   const zipRef=useRef();
   const expZIP=async()=>{
@@ -3645,7 +3841,6 @@ function Backup({db,setDb,comp,flash,admin,conCloud,entrato,utente,email,fisso,s
         <button className="btn link sm" onClick={scaricaPrima}>Scarica copia</button>
         {admin&&entrato&&<button className="btn link sm" onClick={usaPrima}>Usa questa copia</button>}</p>}
     </div></div>
-    <div className="two">
     <div className="card"><h3>Salvataggio & ripristino</h3><div className="bd">
       <p className="hint"><b>Backup completo (ZIP)</b>: contiene dati <u>e</u> foto/video. È quello da usare per la copia di sicurezza e per spostarti su un altro PC/telefono.</p>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:6}}>
@@ -3662,10 +3857,35 @@ function Backup({db,setDb,comp,flash,admin,conCloud,entrato,utente,email,fisso,s
       {admin&&<div style={{marginTop:18}}><button className="btn acc" onClick={reset}>Azzera tutto</button></div>}
     </div></div>
     <div className="card"><h3>Esporta in Excel</h3><div className="bd">
-      <p className="hint">Genera un file .xlsx con tutti i fogli (Pose calcolate, Clienti, Installatori, Consulenti, Zone) da archiviare o condividere col commercialista.</p>
-      <button className="btn" style={{marginTop:10}} onClick={expXLSX}>▤ Esporta Excel (.xlsx)</button>
+      <p className="hint">Ogni pulsante scarica un file .xlsx a sé, pronto da mandare a chi serve: importi in euro, date vere e filtri già attivi sulle intestazioni.</p>
+      <div className="sec" style={{marginTop:14}}>Anagrafiche</div>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:10}}>
+        <button className="btn gh" onClick={expClienti}>👤 Clienti ({db.clienti.length})</button>
+        <button className="btn gh" onClick={expConsulenti}>🤝 Consulenti ({db.consulenti.length})</button>
+        <button className="btn gh" onClick={expInstallatori}>🔧 Installatori ({db.installatori.length})</button>
+      </div>
+      <div className="sec" style={{marginTop:18}}>Pose per stato</div>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:10}}>
+        {XL_STATI.map(s=>(<button key={s.k} className="btn gh" onClick={()=>expStato(s)}>▤ {s.nome} ({conta(s.f)})</button>))}
+      </div>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:10,alignItems:"center"}}>
+        <span className="hint">Oppure una fase precisa:</span>
+        <select value={faseXL} onChange={e=>setFaseXL(e.target.value)}>{FASI.map(f=>(<option key={f} value={f}>{f} ({conta(c=>c.fase===f)})</option>))}</select>
+        <button className="btn gh sm" onClick={expFase}>▤ Esporta la fase</button>
+      </div>
+      <div className="sec" style={{marginTop:18}}>Amministrazione · controllo margini</div>
+      <p className="hint" style={{marginTop:8}}>Solo le pose <b>installate</b>, una riga per pratica: prezzo di vendita e listino, prezzo prodotto, prezzo codice e listino, quanto si è venduto sopra codice, provvigione con la sua fascia, compenso installatore, margine della pratica e margine effettivo con la provvigione vera. In fondo il totale, e un foglio che spiega ogni colonna.</p>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:10,alignItems:"center"}}>
+        <select value={meseXL} onChange={e=>setMeseXL(e.target.value)}>
+          <option value="">Tutti i mesi ({conta(c=>c.fase==="Installato")})</option>
+          {mesiInst.map(m=>(<option key={m} value={m}>Installate a {meseLabel(m)} ({comp.filter(({p,c})=>c.fase==="Installato"&&String(p.dataInstallazione||"").slice(0,7)===m).length})</option>))}
+        </select>
+        <button className="btn" onClick={expMargini}>▤ Controllo margini (.xlsx)</button>
+      </div>
+      <div className="sec" style={{marginTop:18}}>Tutto insieme</div>
+      <p className="hint" style={{marginTop:8}}>Un solo file con un foglio per ogni estrazione (anagrafiche, pose per stato, controllo margini, zone): da archiviare o per il commercialista.</p>
+      <button className="btn gh" style={{marginTop:10}} onClick={expTutto}>▤ Tutto in un file (.xlsx)</button>
     </div></div>
-    </div>
   </div>);
 }
 
