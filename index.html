@@ -268,7 +268,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="7 ott 2026 · 10";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="7 ott 2026 · 11";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -513,6 +513,7 @@ const LOGO="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBAUEBAYFB
 /* ---------- utils ---------- */
 const uid=()=>Math.random().toString(36).slice(2,10);
 const eur=n=>"€ "+(Math.round(n||0)).toLocaleString("it-IT");
+const eur2=n=>"€ "+(+n||0).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2});   // con i centesimi
 /* date sempre in ora locale: toISOString() in Italia (UTC+1/+2) sfasava di un giorno */
 const ymd=x=>x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0");
 const today=()=>ymd(new Date());
@@ -1312,11 +1313,11 @@ function compute(p,db){
   const extraCliente=venditaExtra.length?(extraVendutoTot+extraCorpo):extraCorpo;
 
   /* Confronto riga per riga fra quello che il consulente ha segnato a contratto e quello
-     che l'installatore ha davvero posato. Un metro di linea frigo posato in più si
-     addebita al consulente al PREZZO DI VENDITA al cliente del listino della pratica
-     (100 € IVA inclusa su Arquati): è quello che il cliente avrebbe pagato se fosse stato
-     segnato. La tariffa di posa resta per sapere quanto costa a noi. Contano solo queste
-     due schermate, mai la fattura dell'installatore. */
+     che l'installatore ha davvero posato. Le voci posate in più si valorizzano al PREZZO
+     DI VENDITA del listino della pratica (100 € al metro di linea frigo su Arquati, IVA
+     inclusa) e vanno ad alzare il prezzo codice: vedi la rettifica dopo la provvigione.
+     La tariffa di posa resta per sapere quanto costano a noi. Contano solo queste due
+     schermate, mai la fattura dell'installatore. */
   const posaCompilata=slots.some(([v])=>!!v)||!!p.dataInstallazione;
   const vociConf=!posaCompilata?[]:[...new Set([...venditaExtra.map(r=>r.voce),...slots.filter(([v])=>!!v).map(([v])=>v)])];
   const confronto=vociConf.map(v=>{
@@ -1328,8 +1329,8 @@ function compute(p,db){
   const confrontoOk=confronto.length>0;
   const gapQta=confronto.reduce((a,r)=>a+Math.max(0,r.delta),0);
   const recuperoQta=Math.max(0,-confronto.reduce((a,r)=>a+Math.min(0,r.delta),0));
-  /* da addebitare: solo le voci posate IN PIÙ, al prezzo cliente. Una voce senza prezzo di
-     vendita a listino non si inventa: si segnala e l'importo si scrive a mano. */
+  /* solo le voci posate IN PIÙ, al prezzo cliente. Una voce senza prezzo di vendita a
+     listino non si inventa: si segnala e l'addebito si scrive a mano. */
   const gapVend=confronto.reduce((a,r)=>a+(r.dq>0&&r.vend!==null?r.vend:0),0);
   const gapSenzaPrezzo=confronto.filter(r=>r.dq>0&&r.pu===null).map(r=>r.voce);
   /* la fattura si inserisce col TOTALE come è scritto sul documento. Il costo vero è
@@ -1352,25 +1353,6 @@ function compute(p,db){
   const extraStato = extraCliente===0&&extraFatturato===null ? "" :
     (fattura===null ? "attesa" :
      (scostamento>tollEur ? "sotto" : (scostamento<-tollEur ? "sopra" : "ok")));
-  /* ---------- addebito al consulente sugli extra sottostimati ----------
-     Il consulente segna zero metri di linea frigo, l'installatore ne posa uno: al
-     consulente si toglie il metro al prezzo a cui il cliente l'avrebbe pagato. Le regole
-     E1_04.26 lo trattano come ADDEBITO, ma solo se imputabile al consulente e dopo
-     verifica: qui si propone l'importo e diventa effettivo quando lo si conferma sulla
-     pratica. */
-  const addQuota=((+K.addebitoExtraPct===0)?0:(+K.addebitoExtraPct||100))/100;
-  /* solo i metri e i pezzi in più rispetto al contratto, senza tolleranza: un metro è un
-     metro. La fattura non entra: resta il controllo «extra coperti / non coperti». */
-  const addBaseQta=confrontoOk?gapVend:0;
-  const addBaseFatt=0;
-  const addBase=addBaseQta;
-  const addebitoFonte=addBase>0?"quantità":"";
-  const addebitoProposto=Math.max(0,addBase*addQuota);
-  const addMan=(p.addebitoEur===""||p.addebitoEur===undefined||p.addebitoEur===null)?null:(+p.addebitoEur||0);
-  const addebitoStato=p.addebitoStato||"";
-  const addebitoCalc=addebitoStato==="Non imputabile"?0:(addMan!==null?addMan:addebitoProposto);
-  const addebito=addebitoStato==="Confermato"?addebitoCalc:0;
-
   const nettoTot=netto+omaggioRicavo;
   /* costo posa: la fattura vera quando è arrivata, altrimenti il compenso calcolato */
   const posaTot=(fattura!==null&&!recesso?fattura:compensoInst)+omaggioPosa;
@@ -1435,6 +1417,35 @@ function compute(p,db){
   const codiceTot=pMin+extraCliente+omaggioInstallazione;
   const PRV=provvCalc(p,{totale:lordo,codiceTot,prezzoNoto},K);
 
+  /* ---------- rettifica per gli extra non segnati dal consulente ----------
+     Regola Ecoliving (ottobre 2026): gli extra che l'installatore posa IN PIÙ rispetto al
+     contratto, valorizzati al prezzo di vendita del listino della pratica, si aggiungono
+     al prezzo codice del contratto. L'importo del contratto resta quello: si ricalcola la
+     % sopra codice e quindi la fascia, e al consulente si toglie la DIFFERENZA di
+     provvigione, non il valore degli extra. Esempio: codice 8.650 + 1.196 di extra posati
+     in più = 9.846; 10.600 è il 7,7% sopra → fascia 14% invece di 15%: si tolgono
+     1.445,45 − 1.349,09 = 96,36. Se la fascia non cambia non si toglie niente.
+     Con il nuovo codice il contratto può finire sotto codice: lì la scala non dà una
+     fascia e l'importo si decide a mano. Contano solo gli extra a contratto e quelli
+     dell'installatore, mai la fattura. Resta un ADDEBITO (E1_04.26): si propone e
+     diventa effettivo quando lo si conferma sulla pratica. */
+  const addQuota=((+K.addebitoExtraPct===0)?0:(+K.addebitoExtraPct||100))/100;
+  let rettifica=null;
+  if(confrontoOk&&gapVend>0&&PRV.pct!==null){
+    const R=provvCalc(p,{totale:lordo,codiceTot:codiceTot+gapVend,prezzoNoto},K);
+    rettifica={codice:codiceTot+gapVend,extra:gapVend,markup:R.markup,soglia:R.soglia,pctBase:R.pctBase,pct:R.pct,fonte:R.fonte,
+      eur:R.pct===null?null:R.eur,delta:R.pct===null?null:Math.max(0,PRV.eur-R.eur),sotto:R.pct===null};
+  }
+  const addBaseQta=rettifica&&rettifica.delta!==null?rettifica.delta:0;
+  const addBaseFatt=0;
+  const addBase=addBaseQta;
+  const addebitoFonte=addBase>0?"rettifica fascia":"";
+  const addebitoProposto=Math.max(0,addBase*addQuota);
+  const addMan=(p.addebitoEur===""||p.addebitoEur===undefined||p.addebitoEur===null)?null:(+p.addebitoEur||0);
+  const addebitoStato=p.addebitoStato||"";
+  const addebitoCalc=addebitoStato==="Non imputabile"?0:(addMan!==null?addMan:addebitoProposto);
+  const addebito=addebitoStato==="Confermato"?addebitoCalc:0;
+
   /* Modello di costo del configuratore, integro: materiali, trasporto, posa, omaggio,
      provvigioni, costi generali e costo lead/marketing. Resta una STIMA di massima:
      la provvigione qui è la percentuale piatta di riferimento, non quella vera. */
@@ -1465,7 +1476,7 @@ function compute(p,db){
   margine.provvStima=provvigioni;
   margine.provvReale=PRV.pct===null?null:PRV.eur;
   margine.venditaExtra=venditaExtra;margine.extraVendutoTot=extraVendutoTot;margine.extraCorpo=extraCorpo;margine.venditaExtraIgnoti=venditaExtraIgnoti;
-  margine.confronto=confronto;margine.confrontoOk=confrontoOk;margine.posaCompilata=posaCompilata;margine.gapQta=gapQta;margine.recuperoQta=recuperoQta;margine.gapVend=gapVend;margine.gapSenzaPrezzo=gapSenzaPrezzo;
+  margine.confronto=confronto;margine.confrontoOk=confrontoOk;margine.posaCompilata=posaCompilata;margine.gapQta=gapQta;margine.recuperoQta=recuperoQta;margine.gapVend=gapVend;margine.gapSenzaPrezzo=gapSenzaPrezzo;margine.rettifica=rettifica;
   margine.eurReale=PRV.pct===null?null:(nettoTot-margine.costoTotReale);
   margine.pctReale=(PRV.pct===null||nettoTot<=0)?null:(margine.eurReale/nettoTot*100);
   margine.okReale=margineOk&&PRV.pct!==null;
@@ -2825,7 +2836,7 @@ function PoseForm({p,db,onChange,onClose}){
           <div className="sec" style={{marginTop:0}}>Contratto contro posa</div>
           {!c.margine.posaCompilata&&<p className="hint" style={{margin:"0 0 6px"}}>Confronto in attesa: l'installatore non ha ancora compilato gli extra.</p>}
           <div className="tbl-wrap" style={{border:0,boxShadow:"none"}}><table>
-            <thead><tr><th>Voce</th><th className="num">A contratto</th><th className="num">Posati</th><th className="num">Δ</th><th className="num">Prezzo cliente</th><th className="num">Da addebitare</th></tr></thead>
+            <thead><tr><th>Voce</th><th className="num">A contratto</th><th className="num">Posati</th><th className="num">Δ</th><th className="num">Prezzo cliente</th><th className="num">In più a listino</th></tr></thead>
             <tbody>{c.margine.confronto.map((r,i)=>(<tr key={i}>
               <td>{r.voce}</td>
               <td className="num">{r.qV||<span className="hint">—</span>}</td>
@@ -2834,21 +2845,37 @@ function PoseForm({p,db,onChange,onClose}){
               <td className="num eur">{r.pu===null?<span className="ex ex-sotto">senza prezzo</span>:eur(r.pu)}</td>
               <td className="num eur" style={{fontWeight:700,color:r.dq>0?"#A93A1B":"#777"}}>{r.dq>0&&r.vend!==null?eur(r.vend):<span className="hint">—</span>}</td>
             </tr>))}</tbody></table></div>
-          <div className="costrow tot" style={{marginTop:6}}><span>Sottostimato dal consulente — da addebitare a prezzo di listino</span><span style={{color:c.margine.gapVend>0?"#A93A1B":"#777"}}>{eur(c.margine.gapVend)}</span></div>
+          <div className="costrow tot" style={{marginTop:6}}><span>Extra non segnati dal consulente, a prezzo di listino</span><span style={{color:c.margine.gapVend>0?"#A93A1B":"#777"}}>{eur(c.margine.gapVend)}</span></div>
           {c.margine.gapQta>0&&<div className="costrow"><span>Quanto costa a noi (tariffa di posa)</span><span>{eur(c.margine.gapQta)}</span></div>}
           {c.margine.recuperoQta>0&&<div className="costrow"><span>Sovrastimato (posato meno del venduto, a tariffa di posa)</span><span style={{color:"#2F6134"}}>{eur(c.margine.recuperoQta)}</span></div>}
           {c.margine.gapSenzaPrezzo.length>0&&<p className="hint" style={{margin:"6px 0 0",color:"#A93A1B",fontWeight:600}}>{f.listino
-            ? <>Senza prezzo di vendita a listino: {c.margine.gapSenzaPrezzo.join(", ")}. Per queste voci l'importo dell'addebito va scritto a mano qui sotto.</>
+            ? <>Senza prezzo di vendita a listino: {c.margine.gapSenzaPrezzo.join(", ")}. Per queste voci l'addebito va valutato e scritto a mano qui sotto.</>
             : <>Manca il listino di vendita della pratica: senza non si sa a che prezzo addebitare le voci posate in più.</>}</p>}
-          <p className="hint" style={{margin:"6px 0 0"}}>Le voci posate in più si addebitano al consulente al <b>prezzo di vendita</b> del listino della pratica ({f.listino||"da indicare"}), IVA inclusa: è quello che il cliente avrebbe pagato. La fattura dell'installatore non entra in questo conto.</p>
+          <p className="hint" style={{margin:"6px 0 0"}}>Le voci posate in più, al <b>prezzo di vendita</b> del listino della pratica ({f.listino||"da indicare"}) IVA inclusa, si aggiungono al <b>prezzo codice</b>: si ricalcola la fascia e al consulente si toglie solo la differenza di provvigione. La fattura dell'installatore non entra in questo conto.</p>
           <p className="hint" style={{margin:"7px 0 0"}}>{c.margine.gapVend>0||c.margine.gapSenzaPrezzo.length>0
-            ? <b style={{color:"#A93A1B"}}>L'installatore ha posato più di quanto era segnato a contratto: la differenza è l'addebito proposto al consulente, qui sotto.</b>
+            ? <b style={{color:"#A93A1B"}}>L'installatore ha posato più di quanto era segnato a contratto: il ricalcolo della provvigione è qui sotto.</b>
             : <>Quantità posate coerenti con il contratto.</>}</p>
         </div>}
-        {(c.margine.addebitoProposto>0||f.addebitoStato||c.margine.gapSenzaPrezzo.length>0)&&<div className="fld full" style={{background:"#FFF7F5",border:"1px solid #E9B3A4",borderRadius:10,padding:"10px 12px"}}>
+        {(c.margine.rettifica||c.margine.addebitoProposto>0||f.addebitoStato||c.margine.gapSenzaPrezzo.length>0)&&<div className="fld full" style={{background:"#FFF7F5",border:"1px solid #E9B3A4",borderRadius:10,padding:"10px 12px"}}>
           <div className="sec" style={{marginTop:0}}>Addebito al consulente</div>
-          {c.margine.confrontoOk&&<div className="costrow"><span>Metri e pezzi in più rispetto al contratto, a prezzo di listino</span><span>{eur(c.margine.addebitoBaseQta)}</span></div>}
-          <div className="costrow"><span>Addebito proposto{+db.costi.addebitoExtraPct!==100?" ("+db.costi.addebitoExtraPct+"%)":""}</span><span>{eur(c.margine.addebitoProposto)}</span></div>
+          {(()=>{const R=c.margine.rettifica,V=c.margine.provv||{};if(!R)return null;
+            const pc=x=>x===null||x===undefined?"—":x.toFixed(1).replace(".",",")+"%";
+            return (<div style={{marginBottom:6}}>
+              <div className="tbl-wrap" style={{border:0,boxShadow:"none"}}><table>
+                <thead><tr><th></th><th className="num">Contratto</th><th className="num">Con gli extra posati</th></tr></thead>
+                <tbody>
+                  <tr><td>Prezzo codice</td><td className="num eur">{eur(c.margine.codiceTot)}</td><td className="num eur">{eur(R.codice)} <span className="hint">(+{eur(R.extra)})</span></td></tr>
+                  <tr><td>Importo contratto</td><td className="num eur">{eur(+f.importoVendita||0)}</td><td className="num eur">{eur(+f.importoVendita||0)}</td></tr>
+                  <tr><td>Sopra codice</td><td className="num">{pc(V.markup)}</td><td className="num">{pc(R.markup)}</td></tr>
+                  <tr><td>Provvigione</td><td className="num">{V.pct}%</td><td className="num">{R.sotto?<span className="pz pz-sotto">sotto codice</span>:R.pct+"%"}</td></tr>
+                  <tr><td><b>Provvigione €</b></td><td className="num eur"><b>{eur2(V.eur)}</b></td><td className="num eur"><b>{R.sotto?"—":eur2(R.eur)}</b></td></tr>
+                </tbody></table></div>
+              {R.sotto
+                ? <p className="hint" style={{margin:"6px 0 0",color:"#A93A1B",fontWeight:600}}>Con gli extra posati in più il contratto va sotto il nuovo prezzo codice: la scala non prevede una fascia. L'addebito va deciso e scritto a mano qui sotto.</p>
+                : <div className="costrow tot"><span>Differenza di provvigione da togliere al consulente</span><span style={{color:R.delta>0?"#A93A1B":"#777"}}>{eur2(R.delta)}</span></div>}
+              {!R.sotto&&R.delta===0&&<p className="hint" style={{margin:"4px 0 0"}}>La fascia resta la stessa: non si toglie niente.</p>}
+            </div>);})()}
+          <div className="costrow"><span>Addebito proposto{+db.costi.addebitoExtraPct!==100?" ("+db.costi.addebitoExtraPct+"%)":""}</span><span>{eur2(c.margine.addebitoProposto)}</span></div>
           <div className="form" style={{gridTemplateColumns:"1fr 1fr",marginTop:8}}>
             <div className="fld"><label>Esito verifica</label>
               <select value={f.addebitoStato||""} onChange={e=>set("addebitoStato",e.target.value)}>
@@ -2861,7 +2888,7 @@ function PoseForm({p,db,onChange,onClose}){
               <input type="number" value={f.addebitoEur===undefined||f.addebitoEur===null?"":f.addebitoEur} onChange={e=>set("addebitoEur",e.target.value)} placeholder={String(Math.round(c.margine.addebitoProposto))}/>
             </div>
           </div>
-          <div className="costrow tot"><span>Addebito effettivo</span><span style={{color:c.margine.addebito>0?"#A93A1B":"#777"}}>{c.margine.addebito>0?eur(c.margine.addebito):"€ 0"}</span></div>
+          <div className="costrow tot"><span>Addebito effettivo</span><span style={{color:c.margine.addebito>0?"#A93A1B":"#777"}}>{c.margine.addebito>0?eur2(c.margine.addebito):"€ 0"}</span></div>
           {c.margine.addebitoResiduo>0&&<p className="hint" style={{margin:"5px 0 0",color:"#A93A1B"}}>La provvigione non ha capienza: se ne scalano {eur(c.margine.addebitoApplicato)}, restano {eur(c.margine.addebitoResiduo)} a debito per il mese successivo.</p>}
           <p className="hint" style={{margin:"6px 0 0"}}>{f.addebitoStato==="Confermato"
             ? "Confermato: viene scalato dalla provvigione nel prospetto del mese."
@@ -3770,6 +3797,8 @@ function xlMargine({p,c},K){
     "Contatto personale (punti)":V.bonus||"",
     "Provvigione %":V.pct===null?"":V.pct,
     "Provvigione €":V.pct===null?"":xl2(V.eur),
+    "Extra non segnati dal consulente (listino) €":m.gapVend?xl2(m.gapVend):"",
+    "Provvigione ricalcolata €":m.rettifica&&m.rettifica.eur!==null?xl2(m.rettifica.eur):"",
     "Addebito extra proposto €":m.addebitoProposto?xl2(m.addebitoProposto):"",
     "Esito addebito":m.addebitoStato||(m.addebitoDaValutare?"Da valutare":""),
     "Compenso posa €":xl2(c.compensoStd),
@@ -3822,7 +3851,8 @@ function xlLegenda(K){
     ["Sopra il prezzo codice € / %","Quanto il contratto supera il suo prezzo codice; la % è sul prezzo codice del contratto e decide la fascia. Negativo = venduto sotto codice."],
     ["Imponibile provvigione","Tutto il contratto (prodotto, extra e installazione omaggio) con l'IVA "+(+K.provvIvaPct||10)+"% scorporata: è la base della provvigione."],
     ["Fascia / Provvigione","Dalla scala dell'Allegato E1_04.26 in base a quanto il contratto supera il suo prezzo codice; +"+(+K.provvIntegrazione||0)+" punti se il contatto l'ha portato il consulente."],
-    ["Addebito extra proposto / Esito","Metri e pezzi posati in più rispetto al contratto, al prezzo di vendita di listino IVA inclusa. Si toglie dalla provvigione solo quando è «Confermato» sulla pratica."],
+    ["Extra non segnati dal consulente","Metri e pezzi posati dall'installatore in più rispetto al contratto, al prezzo di vendita di listino IVA inclusa: si aggiungono al prezzo codice."],
+    ["Addebito extra proposto / Esito","Con il prezzo codice aumentato di quegli extra si ricalcola la fascia: l'addebito è la differenza di provvigione. Si toglie solo quando è «Confermato» sulla pratica."],
     ["Compenso installatore","Compenso di posa a tariffa più gli extra posati."],
     ["Fattura installatore (imponibile)","Quando la fattura è arrivata, nel margine sostituisce il compenso a tariffa."],
     ["Venduto netto","Prezzo di vendita con l'IVA "+(+K.ivaPct||0)+"% scorporata."],
