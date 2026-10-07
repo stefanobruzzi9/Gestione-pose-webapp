@@ -268,7 +268,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="4 ott 2026 · 8";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="7 ott 2026 · 9";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -1479,9 +1479,74 @@ function compute(p,db){
 const FASE_IDX={"In attesa OK":1,"Da assegnare":2,"Assegnato":3,"Pronto consegna":4,"Consegnato":5,"Installato":6,"RECESSO":0};
 
 /* ---------- app ---------- */
+/* ---------- aggiornamento automatico ----------
+   L'app aperta dal Dock (o dalla schermata Home del telefono) resta in memoria anche per
+   giorni e da sola non si accorge che online è uscita una versione nuova. Ogni tanto
+   rilegge la pagina dal server e confronta il codice con quello che sta girando: se è
+   cambiato si ricarica da sola, ma solo quando è sicuro (niente di non salvato, nessuna
+   scheda aperta) e quando non la si sta usando (ferma da un minuto, o in secondo piano).
+   Nel frattempo mostra l'avviso con il pulsante per aggiornare subito. */
+const firmaPagina=doc=>{
+  const b=doc.querySelector('script[type="text/babel"]');if(!b)return "";
+  const s=b.textContent+[...doc.querySelectorAll("head style")].map(x=>x.textContent).join("");
+  let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
+  return (h>>>0).toString(36)+"."+s.length;
+};
+const AGG_KEY="arquati_aggiornamento";
+function useNuovaVersione(sicuro){
+  const [nuova,setNuova]=useState(false);
+  const sicuroRef=useRef(sicuro);sicuroRef.current=sicuro;
+  useEffect(()=>{
+    if(!/^https?:$/.test(location.protocol))return;
+    const mia=firmaPagina(document);if(!mia)return;
+    let ss=null;try{ss=window.sessionStorage;}catch(e){}
+    /* se il giro precedente si è ricaricato ma il codice è rimasto lo stesso (pagina presa
+       dalla cache), niente altri tentativi automatici: resta l'avviso, mai giri a vuoto */
+    let giaProvato=false;try{giaProvato=!!ss&&ss.getItem(AGG_KEY)===mia;if(ss&&!giaProvato)ss.removeItem(AGG_KEY);}catch(e){}
+    let vivo=true,trovata=false,ultimo=0,azione=0;
+    const tocca=()=>{azione=Date.now();};
+    const ricarica=()=>{
+      if(giaProvato||!sicuroRef.current())return;
+      if(!document.hidden&&Date.now()-azione<60000)return;   // la si sta usando: si aspetta
+      try{ss&&ss.setItem(AGG_KEY,mia);}catch(e){}
+      location.reload();
+    };
+    const controlla=async()=>{
+      if(trovata){ricarica();return;}
+      if(Date.now()-ultimo<60000)return;
+      ultimo=Date.now();
+      try{
+        const r=await fetch(location.href.split("#")[0],{cache:"no-store"});
+        if(!r.ok)return;
+        const online=firmaPagina(new DOMParser().parseFromString(await r.text(),"text/html"));
+        if(!vivo||!online||online===mia)return;
+        trovata=true;setNuova(true);ricarica();
+      }catch(e){}
+    };
+    const giro=()=>{if(trovata||Date.now()-ultimo>=10*60000)controlla();};
+    const t=setTimeout(controlla,5000);
+    const iv=setInterval(giro,60000);
+    const vis=()=>{if(document.hidden){if(trovata)ricarica();}else controlla();};
+    const ev=["pointerdown","keydown","wheel","touchstart"];
+    ev.forEach(e=>window.addEventListener(e,tocca,{passive:true}));
+    document.addEventListener("visibilitychange",vis);
+    window.addEventListener("focus",controlla);
+    window.addEventListener("pageshow",controlla);
+    return()=>{vivo=false;clearTimeout(t);clearInterval(iv);
+      ev.forEach(e=>window.removeEventListener(e,tocca));
+      document.removeEventListener("visibilitychange",vis);
+      window.removeEventListener("focus",controlla);window.removeEventListener("pageshow",controlla);};
+  },[]);
+  return nuova;
+}
+/* la sezione aperta sopravvive al ricaricamento, automatico o a mano */
+const TAB_KEY="arquati_sezione";
+const tabIniziale=()=>{try{return window.sessionStorage.getItem(TAB_KEY)||"dash";}catch(e){return "dash";}};
+
 function App(){
   const [db,setDb]=useState(load);
-  const [tab,setTab]=useState("dash");
+  const [tab,setTab]=useState(tabIniziale);
+  useEffect(()=>{try{window.sessionStorage.setItem(TAB_KEY,tab);}catch(e){}},[tab]);
   const [toast,setToast]=useState("");
   const [editP,setEditP]=useState(null);
   const [canInstall,setCanInstall]=useState(false);
@@ -1538,6 +1603,13 @@ function App(){
     bozzaRef.current=nb;setBozza(nb);
   };
   const up=fn=>setDati(d=>fn(structuredClone(d)));
+  /* si può ricaricare senza perdere niente: nessuna proposta da inviare, nessun salvataggio
+     in corso o in attesa, nessuna scheda aperta, nessun campo in compilazione */
+  const datiAlSicuro=()=>!bozzaRef.current&&!occupato.current&&stato!=="salvo"&&
+    !(entrato&&admin&&prontoRef.current&&canon(dbRef.current)!==lastSync.current);
+  const nuovaVersione=useNuovaVersione(()=>datiAlSicuro()&&!document.querySelector(".ovl")&&tabRef.current!=="importa"&&
+    !(document.activeElement&&/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)));
+  const aggiornaOra=()=>{if(!datiAlSicuro()&&!confirm("Ci sono modifiche non ancora salvate o inviate: aggiornando adesso si perdono. Aggiornare comunque?"))return;location.reload();};
   const writePose=p=>up(d=>{const i=d.pose.findIndex(x=>x.id===p.id);if(i>=0)d.pose[i]=p;else d.pose.push(p);return d;});
   const datiVuoti=useMemo(()=>migrate({...JSON.parse(JSON.stringify(seed)),clienti:[],installatori:[],consulenti:[],pose:[],zoneMap:{},imports:[]}),[]);
   const vista=ro&&!pronto&&!datiCloudQui()?datiVuoti:(bozza?bozza.db:db);
@@ -1743,6 +1815,10 @@ function App(){
           </div>
         </div>
         <div className="wrap">
+          {nuovaVersione&&<div className="avviso bozza">
+            <div><b>🔄 È disponibile una versione nuova del gestionale.</b><div className="hint">Si aggiorna da sola appena la lasci ferma un minuto o passi a un'altra finestra. Puoi anche aggiornarla subito.</div></div>
+            <button className="btn" onClick={aggiornaOra}>Aggiorna ora</button>
+          </div>}
           {ro&&opsBozza.length>0&&<div className="avviso bozza">
             <div><b>✎ {opsBozza.length===1?"1 modifica da inviare":opsBozza.length+" modifiche da inviare"}</b><div className="hint">{descriviOps(opsBozza,vista)}</div></div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button className="btn" onClick={inviaBozza}>Invia all'amministratore</button><button className="btn gh" onClick={annullaBozza}>Annulla</button></div>
