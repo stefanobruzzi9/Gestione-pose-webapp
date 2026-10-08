@@ -268,7 +268,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="7 ott 2026 · 11";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="8 ott 2026 · 12";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -1426,15 +1426,21 @@ function compute(p,db){
      in più = 9.846; 10.600 è il 7,7% sopra → fascia 14% invece di 15%: si tolgono
      1.445,45 − 1.349,09 = 96,36. Se la fascia non cambia non si toglie niente.
      Con il nuovo codice il contratto può finire sotto codice: lì la scala non dà una
-     fascia e l'importo si decide a mano. Contano solo gli extra a contratto e quelli
+     fascia e si applica la più bassa (13%), più l'eventuale contatto personale.
+     Contano solo gli extra a contratto e quelli
      dell'installatore, mai la fattura. Resta un ADDEBITO (E1_04.26): si propone e
      diventa effettivo quando lo si conferma sulla pratica. */
   const addQuota=((+K.addebitoExtraPct===0)?0:(+K.addebitoExtraPct||100))/100;
   let rettifica=null;
   if(confrontoOk&&gapVend>0&&PRV.pct!==null){
     const R=provvCalc(p,{totale:lordo,codiceTot:codiceTot+gapVend,prezzoNoto},K);
-    rettifica={codice:codiceTot+gapVend,extra:gapVend,markup:R.markup,soglia:R.soglia,pctBase:R.pctBase,pct:R.pct,fonte:R.fonte,
-      eur:R.pct===null?null:R.eur,delta:R.pct===null?null:Math.max(0,PRV.eur-R.eur),sotto:R.pct===null};
+    const sc=Array.isArray(K.provvScala)&&K.provvScala.length?K.provvScala:DEF_PROVV_SCALA();
+    const minima=sc.reduce((a,f)=>(+f.min)<(+a.min)?f:a,sc[0]);
+    const sotto=R.pct===null;
+    const pctBaseR=sotto?(+minima.pct||0):R.pctBase, pctR=sotto?pctBaseR+R.bonus:R.pct;
+    const eurR=R.base*pctR/100;
+    rettifica={codice:codiceTot+gapVend,extra:gapVend,markup:R.markup,soglia:sotto?+minima.min:R.soglia,pctBase:pctBaseR,bonus:R.bonus,pct:pctR,
+      fonte:sotto?"minima":R.fonte,eur:eurR,delta:Math.max(0,PRV.eur-eurR),sotto};
   }
   const addBaseQta=rettifica&&rettifica.delta!==null?rettifica.delta:0;
   const addBaseFatt=0;
@@ -2867,13 +2873,12 @@ function PoseForm({p,db,onChange,onClose}){
                   <tr><td>Prezzo codice</td><td className="num eur">{eur(c.margine.codiceTot)}</td><td className="num eur">{eur(R.codice)} <span className="hint">(+{eur(R.extra)})</span></td></tr>
                   <tr><td>Importo contratto</td><td className="num eur">{eur(+f.importoVendita||0)}</td><td className="num eur">{eur(+f.importoVendita||0)}</td></tr>
                   <tr><td>Sopra codice</td><td className="num">{pc(V.markup)}</td><td className="num">{pc(R.markup)}</td></tr>
-                  <tr><td>Provvigione</td><td className="num">{V.pct}%</td><td className="num">{R.sotto?<span className="pz pz-sotto">sotto codice</span>:R.pct+"%"}</td></tr>
-                  <tr><td><b>Provvigione €</b></td><td className="num eur"><b>{eur2(V.eur)}</b></td><td className="num eur"><b>{R.sotto?"—":eur2(R.eur)}</b></td></tr>
+                  <tr><td>Provvigione</td><td className="num">{V.pct}%</td><td className="num">{R.sotto?<><span className="pz pz-sotto">sotto codice</span> {R.pct}%</>:R.pct+"%"}</td></tr>
+                  <tr><td><b>Provvigione €</b></td><td className="num eur"><b>{eur2(V.eur)}</b></td><td className="num eur"><b>{eur2(R.eur)}</b></td></tr>
                 </tbody></table></div>
-              {R.sotto
-                ? <p className="hint" style={{margin:"6px 0 0",color:"#A93A1B",fontWeight:600}}>Con gli extra posati in più il contratto va sotto il nuovo prezzo codice: la scala non prevede una fascia. L'addebito va deciso e scritto a mano qui sotto.</p>
-                : <div className="costrow tot"><span>Differenza di provvigione da togliere al consulente</span><span style={{color:R.delta>0?"#A93A1B":"#777"}}>{eur2(R.delta)}</span></div>}
-              {!R.sotto&&R.delta===0&&<p className="hint" style={{margin:"4px 0 0"}}>La fascia resta la stessa: non si toglie niente.</p>}
+              {R.sotto&&<p className="hint" style={{margin:"6px 0 4px",color:"#A93A1B",fontWeight:600}}>Con gli extra posati in più il contratto va sotto il nuovo prezzo codice: si applica la fascia più bassa della scala, {R.pctBase}%{R.bonus?" + "+R.bonus+" contatto personale":""}.</p>}
+              <div className="costrow tot"><span>Differenza di provvigione da togliere al consulente</span><span style={{color:R.delta>0?"#A93A1B":"#777"}}>{eur2(R.delta)}</span></div>
+              {R.delta===0&&<p className="hint" style={{margin:"4px 0 0"}}>{R.sotto?"Era già nella fascia più bassa: non si toglie niente.":"La fascia resta la stessa: non si toglie niente."}</p>}
             </div>);})()}
           <div className="costrow"><span>Addebito proposto{+db.costi.addebitoExtraPct!==100?" ("+db.costi.addebitoExtraPct+"%)":""}</span><span>{eur2(c.margine.addebitoProposto)}</span></div>
           <div className="form" style={{gridTemplateColumns:"1fr 1fr",marginTop:8}}>
@@ -3852,7 +3857,7 @@ function xlLegenda(K){
     ["Imponibile provvigione","Tutto il contratto (prodotto, extra e installazione omaggio) con l'IVA "+(+K.provvIvaPct||10)+"% scorporata: è la base della provvigione."],
     ["Fascia / Provvigione","Dalla scala dell'Allegato E1_04.26 in base a quanto il contratto supera il suo prezzo codice; +"+(+K.provvIntegrazione||0)+" punti se il contatto l'ha portato il consulente."],
     ["Extra non segnati dal consulente","Metri e pezzi posati dall'installatore in più rispetto al contratto, al prezzo di vendita di listino IVA inclusa: si aggiungono al prezzo codice."],
-    ["Addebito extra proposto / Esito","Con il prezzo codice aumentato di quegli extra si ricalcola la fascia: l'addebito è la differenza di provvigione. Si toglie solo quando è «Confermato» sulla pratica."],
+    ["Addebito extra proposto / Esito","Con il prezzo codice aumentato di quegli extra si ricalcola la fascia (se il contratto va sotto codice si applica la fascia più bassa): l'addebito è la differenza di provvigione. Si toglie solo quando è «Confermato» sulla pratica."],
     ["Compenso installatore","Compenso di posa a tariffa più gli extra posati."],
     ["Fattura installatore (imponibile)","Quando la fattura è arrivata, nel margine sostituisce il compenso a tariffa."],
     ["Venduto netto","Prezzo di vendita con l'IVA "+(+K.ivaPct||0)+"% scorporata."],
