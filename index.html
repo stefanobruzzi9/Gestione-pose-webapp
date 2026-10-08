@@ -268,7 +268,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="8 ott 2026 · 13";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="8 ott 2026 · 14";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -2531,15 +2531,26 @@ function PoseForm({p,db,onChange,onClose}){
             {LISTINI.map(l=>(<option key={l}>{l}</option>))}
           </select>
         </div>
-        <div className="fld full"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:"13px 16px"}}>
-          {F("Importo vendita €","importoVendita","number")}
-          <div className="fld"><label>Prezzo codice (prodotto + extra)</label>
-            <input value={c.margine.prezzoNoto?eur(c.margine.codiceTot):""} placeholder="— manca il listino o il prodotto —" disabled
-              style={{fontWeight:700,background:"#F7F9F6",color:"var(--ink)"}}/></div>
+        <div className="fld full"><div style={{display:"flex",flexWrap:"wrap",gap:"13px 16px",alignItems:"flex-start"}}>
+          <div style={{flex:"1 1 170px",minWidth:0}}>{F("Importo vendita €","importoVendita","number")}</div>
+          {/* il prezzo codice scomposto: codice del prodotto + extra (+ omaggio) = totale */}
+          <div className="fld" style={{flex:"2 1 320px"}}><label>Prezzo codice (prodotto + extra)</label>
+            {c.margine.prezzoNoto
+              ? (()=>{const voce=(v,l,tot)=>(<span style={{display:"inline-flex",flexDirection:"column",lineHeight:1.15}}>
+                    <b className="mono" style={{fontSize:tot?16:14,color:tot?"var(--brand-dk)":"var(--ink)"}}>{eur(v)}</b>
+                    <span style={{fontSize:10.5,color:"var(--muted)"}}>{l}</span></span>);
+                  const op=t=>(<span style={{fontWeight:700,color:"var(--muted)",fontSize:15}}>{t}</span>);
+                  return (<div style={{display:"flex",alignItems:"center",gap:"6px 10px",flexWrap:"wrap",background:"var(--brand-soft)",border:"1px solid #C7DCC1",borderRadius:9,padding:"5px 12px"}}>
+                    {voce(c.margine.prezzoCodice,"codice prodotto")}{op("+")}{voce(c.margine.extraCliente,"extra a contratto")}
+                    {c.margine.omaggioInstallazione>0&&<>{op("+")}{voce(c.margine.omaggioInstallazione,"installazione omaggio")}</>}
+                    <span style={{display:"inline-flex",alignItems:"center",gap:10}}>{op("=")}{voce(c.margine.codiceTot,"prezzo codice",true)}</span>
+                  </div>);})()
+              : <input value="" placeholder="— manca il listino o il prodotto —" disabled style={{background:"#F7F9F6"}}/>}
+          </div>
         </div>
           {c.margine.prezzoNoto
-            ? <span className="hint" style={{marginTop:5}}>{eur(c.margine.prezzoCodice)} prodotto{c.margine.extraCliente>0?" + "+eur(c.margine.extraCliente)+" extra a contratto":""}{c.margine.omaggioInstallazione>0?" + "+eur(c.margine.omaggioInstallazione)+" installazione omaggio":""}
-                {(+f.importoVendita||0)>0&&<> · <b style={{color:c.margine.sopraCodice>=0?"#2F6134":"#A93A1B"}}>{c.margine.sopraCodice>=0?"venduto "+eur(c.margine.sopraCodice)+" sopra codice":"venduto "+eur(-c.margine.sopraCodice)+" SOTTO codice"}{c.margine.codiceTot>0?" ("+((c.margine.sopraCodice/c.margine.codiceTot)*100).toFixed(1).replace(".",",")+"%)":""}</b></>}</span>
+            ? <span className="hint" style={{marginTop:5}}>
+                {(+f.importoVendita||0)>0&&<b style={{color:c.margine.sopraCodice>=0?"#2F6134":"#A93A1B"}}>{c.margine.sopraCodice>=0?"venduto "+eur(c.margine.sopraCodice)+" sopra codice":"venduto "+eur(-c.margine.sopraCodice)+" SOTTO codice"}{c.margine.codiceTot>0?" ("+((c.margine.sopraCodice/c.margine.codiceTot)*100).toFixed(1).replace(".",",")+"%)":""}</b>}</span>
             : (c.margine.prezzoManca.length>0&&<span className="hint" style={{marginTop:5}}>Per il prezzo codice manca: {c.margine.prezzoManca.join(", ")}.</span>)}
         </div>
         <div className="sec">Pagamento e via libera alla posa</div>
