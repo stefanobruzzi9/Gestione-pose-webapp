@@ -268,7 +268,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="8 ott 2026 · 12";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="8 ott 2026 · 13";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -2351,13 +2351,40 @@ function DateField({value,onChange}){
       <button type="button" className="btn gh sm" style={{opacity:value?1:.4}} onClick={()=>{onChange("");if(ref.current)ref.current.value="";}}>Svuota</button>
     </div>);
 }
+/* La scheda lavora su una BOZZA: le modifiche si vedono subito (margini, provvigione,
+   fasi) ma entrano nel gestionale solo con «Salva». Chiudendo senza salvare si torna a
+   com'era, così si possono fare prove senza toccare i dati. */
 function PoseForm({p,db,onChange,onClose}){
   const [f,setF]=useState(p);
+  const [base,setBase]=useState(p);        // com'è la pratica salvata
   const c=useMemo(()=>compute(f,db),[f,db]);
-  const set=(k,v)=>{const nf={...f,[k]:v};setF(nf);onChange(nf);};
-  const setM=(o)=>{const nf={...f,...o};setF(nf);onChange(nf);};
+  const modificata=canon(f)!==canon(base);
+  const set=(k,v)=>{const nf={...f,[k]:v};setF(nf);};
+  const setM=(o)=>{const nf={...f,...o};setF(nf);};
   /* scrivere due campi con due set() consecutivi faceva perdere il primo: qui si scrive in un colpo solo */
-  const setMulti=obj=>{const nf={...f,...obj};setF(nf);onChange(nf);};
+  const setMulti=obj=>{const nf={...f,...obj};setF(nf);};
+  /* allegati: i file stanno su questo dispositivo. Quelli tolti si cancellano davvero solo
+     salvando; quelli aggiunti e poi lasciati senza salvare si buttano chiudendo. */
+  const idFile=x=>new Set([...(x.files||[]),...(x.fattFiles||[])].map(a=>a.id));
+  const salva=()=>{
+    const ora=idFile(f);idFile(base).forEach(id=>{if(!ora.has(id))fileDel(id).catch(()=>{});});
+    onChange(f);setBase(f);
+  };
+  const chiudi=()=>{
+    if(modificata){
+      if(!confirm("Ci sono modifiche non salvate.\n\nChiudere senza salvare? Le modifiche andranno perse."))return;
+      const prima=idFile(base);idFile(f).forEach(id=>{if(!prima.has(id))fileDel(id).catch(()=>{});});
+    }
+    onClose();
+  };
+  const salvaRef=useRef(salva);salvaRef.current=salva;
+  const modRef=useRef(modificata);modRef.current=modificata;
+  useEffect(()=>{
+    const tasti=e=>{if((e.metaKey||e.ctrlKey)&&(e.key==="s"||e.key==="S")){e.preventDefault();if(modRef.current)salvaRef.current();}};
+    const uscita=e=>{if(modRef.current){e.preventDefault();e.returnValue="";}};
+    window.addEventListener("keydown",tasti);window.addEventListener("beforeunload",uscita);
+    return()=>{window.removeEventListener("keydown",tasti);window.removeEventListener("beforeunload",uscita);};
+  },[]);
   /* lettura automatica della fattura installatore */
   const [leggendo,setLeggendo]=useState(false);
   const [errFatt,setErrFatt]=useState("");
@@ -2457,15 +2484,15 @@ function PoseForm({p,db,onChange,onClose}){
     <div className="fld"><label>Q.tà</label><input type="number" min="1" step="1" inputMode="numeric" onKeyDown={soloTastiNumero} disabled={!v} value={v?(f["q"+n]||""):""} onChange={e=>set("q"+n,soloCifre(e.target.value))}/></div>
     <div className="fld"><label>Costo posa</label><input readOnly value={v?(tp!==null?eur(q*tp):"—"):""} style={{background:"#F7F9F6",textAlign:"right"}}/></div></div>);};
   const idx=FASE_IDX[c.fase]||0;
-  return(<div className="ovl" onClick={e=>{if(e.target.classList.contains("ovl"))onClose();}}>
+  return(<div className="ovl" onClick={e=>{if(e.target.classList.contains("ovl"))chiudi();}}>
     <div className="modal">
       <div className="hd"><div><h2>{p.nContratto?"Pratica "+p.nContratto:"Nuova pratica"}</h2>
         <div className="pipe">{[1,2,3,4,5,6].map(i=>(<div key={i} className="st" style={{background:i<=idx&&c.fase!=="RECESSO"?"var(--brand)":(c.fase==="RECESSO"?"var(--f-rec)":"#E3E9E1")}}/>))}</div></div>
-        <button className="x" onClick={onClose}>×</button></div>
+        <button className="x" onClick={chiudi}>×</button></div>
       <div className="bd"><div className="form">
         <div className="sec">Pratica</div>
         {F("N. contratto","nContratto")}
-        <div className="fld"><label>Cliente</label><select value={f.clienteId} onChange={e=>{const v=e.target.value;const cl=db.clienti.find(x=>x.id===v);const zv=db.zoneMap[cl?cl.provincia:""];const lst=Array.isArray(zv)?zv.filter(Boolean):(zv?[zv]:[]);const nf={...f,clienteId:v};if(lst[0]&&!f.installatore)nf.installatore=lst[0];setF(nf);onChange(nf);}}><option value=""></option>{db.clienti.map(x=>(<option key={x.id} value={x.id}>{x.nome}</option>))}</select></div>
+        <div className="fld"><label>Cliente</label><select value={f.clienteId} onChange={e=>{const v=e.target.value;const cl=db.clienti.find(x=>x.id===v);const zv=db.zoneMap[cl?cl.provincia:""];const lst=Array.isArray(zv)?zv.filter(Boolean):(zv?[zv]:[]);const nf={...f,clienteId:v};if(lst[0]&&!f.installatore)nf.installatore=lst[0];setF(nf);}}><option value=""></option>{db.clienti.map(x=>(<option key={x.id} value={x.id}>{x.nome}</option>))}</select></div>
         {(()=>{
           const cl=db.clienti.find(x=>x.id===f.clienteId);
           if(!cl)return <div className="fld"><label>Provincia (auto)</label><input value={c.provincia} disabled/></div>;
@@ -2504,7 +2531,17 @@ function PoseForm({p,db,onChange,onClose}){
             {LISTINI.map(l=>(<option key={l}>{l}</option>))}
           </select>
         </div>
-        {F("Importo vendita €","importoVendita","number")}
+        <div className="fld full"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:"13px 16px"}}>
+          {F("Importo vendita €","importoVendita","number")}
+          <div className="fld"><label>Prezzo codice (prodotto + extra)</label>
+            <input value={c.margine.prezzoNoto?eur(c.margine.codiceTot):""} placeholder="— manca il listino o il prodotto —" disabled
+              style={{fontWeight:700,background:"#F7F9F6",color:"var(--ink)"}}/></div>
+        </div>
+          {c.margine.prezzoNoto
+            ? <span className="hint" style={{marginTop:5}}>{eur(c.margine.prezzoCodice)} prodotto{c.margine.extraCliente>0?" + "+eur(c.margine.extraCliente)+" extra a contratto":""}{c.margine.omaggioInstallazione>0?" + "+eur(c.margine.omaggioInstallazione)+" installazione omaggio":""}
+                {(+f.importoVendita||0)>0&&<> · <b style={{color:c.margine.sopraCodice>=0?"#2F6134":"#A93A1B"}}>{c.margine.sopraCodice>=0?"venduto "+eur(c.margine.sopraCodice)+" sopra codice":"venduto "+eur(-c.margine.sopraCodice)+" SOTTO codice"}{c.margine.codiceTot>0?" ("+((c.margine.sopraCodice/c.margine.codiceTot)*100).toFixed(1).replace(".",",")+"%)":""}</b></>}</span>
+            : (c.margine.prezzoManca.length>0&&<span className="hint" style={{marginTop:5}}>Per il prezzo codice manca: {c.margine.prezzoManca.join(", ")}.</span>)}
+        </div>
         <div className="sec">Pagamento e via libera alla posa</div>
         <div className="fld"><label>Come paga il cliente</label>
           <select value={f.pagamento||""} onChange={e=>set("pagamento",e.target.value)}>
@@ -2778,7 +2815,7 @@ function PoseForm({p,db,onChange,onClose}){
             onAdd={async(fs)=>{const metas=[];for(const file of fs){const id=uid();try{await filePut(id,file);metas.push({id,name:file.name,type:file.type,size:file.size});}catch(e){alert("Impossibile salvare «"+file.name+"»");}}
               const nuovi=[...(f.fattFiles||[]),...metas];setMulti({fattFiles:nuovi});
               if(aiOn(loadAi())&&fs.length===1){leggiFattura(fs[0]);}}}
-            onRemove={async(fx)=>{if(!confirm("Rimuovere «"+fx.name+"»?"))return;try{await fileDel(fx.id);}catch(e){}set("fattFiles",(f.fattFiles||[]).filter(x=>x.id!==fx.id));}}/>
+            onRemove={async(fx)=>{if(!confirm("Rimuovere «"+fx.name+"»?"))return;set("fattFiles",(f.fattFiles||[]).filter(x=>x.id!==fx.id));}}/>
           {leggendo&&<div className="hint" style={{marginTop:6,fontWeight:600,color:"var(--brand-dk)"}}>⏳ Leggo la fattura…</div>}
           {errFatt&&<div className="hint" style={{marginTop:6,color:"var(--accent)",fontWeight:600}}>{errFatt}</div>}
           {!aiOn(loadAi())&&(f.fattFiles||[]).length>0&&<div className="hint" style={{marginTop:6}}>Con la chiave API configurata in «Importa da foto» l'importo verrebbe letto in automatico.</div>}
@@ -2907,7 +2944,7 @@ function PoseForm({p,db,onChange,onClose}){
         <div className="fld full"><label>Allegati — foto/video (da WhatsApp)</label>
           <Attachments files={f.files||[]}
             onAdd={async(fs)=>{const metas=[];for(const file of fs){const id=uid();try{await filePut(id,file);metas.push({id,name:file.name,type:file.type,size:file.size});}catch(e){alert("Impossibile salvare «"+file.name+"» (memoria piena?).");}}if(metas.length)set("files",[...(f.files||[]),...metas]);}}
-            onRemove={async(fx)=>{if(!confirm("Rimuovere «"+fx.name+"»?"))return;try{await fileDel(fx.id);}catch(e){}set("files",(f.files||[]).filter(x=>x.id!==fx.id));}}/>
+            onRemove={async(fx)=>{if(!confirm("Rimuovere «"+fx.name+"»?"))return;set("files",(f.files||[]).filter(x=>x.id!==fx.id));}}/>
         </div>
         <div className="fld"><label>Extra materiali € (usati in più su questo cantiere)</label><input type="number" value={f.extraMateriali||""} onChange={e=>set("extraMateriali",e.target.value)} placeholder="0"/>
           {c.margine.prezzoNoto&&<span className="hint">Forbice di vendita: prezzo codice <b>{eur(c.margine.prezzoCodice)}</b> — listino <b>{eur(c.margine.prezzoListino)}</b> (superabile). Riferita al solo prodotto, senza extra né omaggio.</span>}
@@ -3020,8 +3057,12 @@ function PoseForm({p,db,onChange,onClose}){
           </div>}
         </div>
       </div></div>
-      <div className="ft"><span className="hint">{c.effInst?("Installatore: "+c.effInst):"Da assegnare — nessun installatore"} · <b>salvataggio automatico</b></span>
-        <div style={{display:"flex",gap:10}}><button className="btn gh" onClick={()=>ordineLavoro(f,db,c)} title="PDF senza prezzi da mandare all'installatore">📄 Ordine di lavoro</button><button className="btn gh" onClick={()=>schedaIntervento(f,db,c)}>🖨 Stampa scheda</button><button className="btn" onClick={onClose}>Chiudi</button></div></div>
+      <div className="ft"><span className="hint">{c.effInst?("Installatore: "+c.effInst):"Da assegnare — nessun installatore"} · {modificata
+          ? <b style={{color:"var(--accent)"}}>● modifiche non salvate</b>
+          : <b style={{color:"var(--brand-dk)"}}>✓ tutto salvato</b>}</span>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}><button className="btn gh" onClick={()=>ordineLavoro(f,db,c)} title="PDF senza prezzi da mandare all'installatore">📄 Ordine di lavoro</button><button className="btn gh" onClick={()=>schedaIntervento(f,db,c)}>🖨 Stampa scheda</button>
+          <button className="btn" onClick={salva} disabled={!modificata} style={modificata?null:{opacity:.45,cursor:"default"}} title="Salva le modifiche (⌘S / Ctrl+S)">💾 Salva</button>
+          <button className="btn gh" onClick={chiudi}>Chiudi</button></div></div>
     </div>
   </div>);
 }
