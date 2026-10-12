@@ -60,6 +60,8 @@ a{color:var(--brand-dk)}
 .btn.sm{padding:6px 11px;font-size:12.5px;border-radius:8px}
 a.btn{display:inline-flex;align-items:center;text-decoration:none}
 .btn.link{background:none;color:var(--muted);padding:5px 8px} .btn.link:hover{color:var(--accent)}
+.btn.del{background:#fff;color:#A93A1B;border:1px solid #E9B3A4} .btn.del:hover{background:#FFF7F5;border-color:#A93A1B;color:#8a2c12}
+.dop{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:6px;background:#FFF3D6;color:#7a5c00;font-size:10.5px;font-weight:700;white-space:nowrap}
 /* cards */
 .grid{display:grid;gap:14px}
 .kpis{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
@@ -268,7 +270,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="8 ott 2026 · 14";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="12 ott 2026 · 15";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -1640,6 +1642,12 @@ function App(){
     !(document.activeElement&&/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)));
   const aggiornaOra=()=>{if(!datiAlSicuro()&&!confirm("Ci sono modifiche non ancora salvate o inviate: aggiornando adesso si perdono. Aggiornare comunque?"))return;location.reload();};
   const writePose=p=>up(d=>{const i=d.pose.findIndex(x=>x.id===p.id);if(i>=0)d.pose[i]=p;else d.pose.push(p);return d;});
+  const eliminaPratica=p=>{
+    const cl=vista.clienti.find(x=>x.id===p.clienteId);
+    if(!confirm(testoEliminaPratica(p,cl?cl.nome:"")))return false;
+    if(!ro)[...(p.files||[]),...(p.fattFiles||[])].forEach(f=>{fileDel(f.id).catch(()=>{});});
+    up(d=>{d.pose=d.pose.filter(x=>x.id!==p.id);return d;});flash(ro?msgElimina(ro):"Pratica eliminata");return true;
+  };
   const datiVuoti=useMemo(()=>migrate({...JSON.parse(JSON.stringify(seed)),clienti:[],installatori:[],consulenti:[],pose:[],zoneMap:{},imports:[]}),[]);
   const vista=ro&&!pronto&&!datiCloudQui()?datiVuoti:(bozza?bozza.db:db);
   const comp=useMemo(()=>vista.pose.map(p=>({p,c:compute(p,vista)})),[vista]);
@@ -1874,7 +1882,8 @@ function App(){
             fisso={cloudFisso()} stato={stato} onCollega={collega} onScollega={scollega} onEsci={()=>esci()} onSalva={salvaOra} onRicarica={ricarica}/>}
         </div>
       </main>
-      {editP&&<PoseForm p={editP} db={vista} onChange={writePose} onClose={()=>setEditP(null)}/>}
+      {editP&&<PoseForm p={editP} db={vista} onChange={writePose} onClose={()=>setEditP(null)}
+        esiste={vista.pose.some(x=>x.id===editP.id)} onDelete={eliminaPratica}/>}
       {toast&&<div className="toast">{toast}</div>}
     </div>
     </SoloLettura.Provider>
@@ -2182,13 +2191,27 @@ function Pose({comp,db,up,flash,openPose}){
   if(ff)rows=rows.filter(({c})=>c.fase===ff);
   if(fi)rows=rows.filter(({c})=>c.effInst===fi);
   if(fm)rows=rows.filter(({c})=>c.motivo===fm);
-  const del=id=>{if(confirm("Eliminare questa pratica?")){const pz=comp.find(x=>x.p.id===id);if(pz&&!ro)[...(pz.p.files||[]),...(pz.p.fattFiles||[])].forEach(f=>{try{fileDel(f.id);}catch(e){}});up(d=>{d.pose=d.pose.filter(x=>x.id!==id);return d;});flash("Pratica eliminata");}};
+  /* possibili doppioni: stesso numero di contratto, oppure stesso cliente con stesso
+     importo e stessa data di firma (il caso di una pratica inserita due volte) */
+  const kContr=({p})=>normNome(p.nContratto);
+  const kVend=({p,c})=>normNome(c.cliente)?normNome(c.cliente)+"|"+(+p.importoVendita||0)+"|"+(p.dataVendita||""):"";
+  const dContr=useMemo(()=>contaChiavi(comp,kContr),[comp]);
+  const dVend=useMemo(()=>contaChiavi(comp,kVend),[comp]);
+  const isDoppio=r=>(dContr[kContr(r)]||0)>1||(dVend[kVend(r)]||0)>1;
+  const nDoppi=comp.filter(isDoppio).length;
+  const [soloDoppi,setSoloDoppi]=useState(false);
+  if(soloDoppi&&nDoppi)rows=rows.filter(isDoppio).sort((a,b)=>normNome(a.c.cliente).localeCompare(normNome(b.c.cliente)));
+  const del=id=>{const pz=comp.find(x=>x.p.id===id);if(!pz||!confirm(testoEliminaPratica(pz.p,pz.c.cliente)))return;
+    if(!ro)[...(pz.p.files||[]),...(pz.p.fattFiles||[])].forEach(f=>{fileDel(f.id).catch(()=>{});});
+    up(d=>{d.pose=d.pose.filter(x=>x.id!==id);return d;});flash(ro?msgElimina(ro):"Pratica eliminata");};
   return(<>
     <div className="filters">
       <input placeholder="Cerca contratto, cliente, installatore…" value={q} onChange={e=>setQ(e.target.value)} style={{minWidth:260}}/>
       <select value={ff} onChange={e=>setFf(e.target.value)}><option value="">Tutte le fasi</option>{FASI.map(f=>(<option key={f}>{f}</option>))}</select>
       <select value={fi} onChange={e=>setFi(e.target.value)}><option value="">Tutti gli installatori</option>{db.installatori.map(i=>(<option key={i.id}>{i.nome}</option>))}</select>
       <select value={fm} onChange={e=>setFm(e.target.value)}><option value="">Tutti i motivi recesso</option>{[...MOTIVI_REC,"Non indicato"].map(m=>(<option key={m}>{m}</option>))}</select>
+      {nDoppi>0&&<label className="hint" style={{display:"inline-flex",gap:6,alignItems:"center",cursor:"pointer",color:"#7a5c00",fontWeight:600}}>
+        <input type="checkbox" checked={soloDoppi} onChange={e=>setSoloDoppi(e.target.checked)}/> Solo possibili doppioni ({nDoppi})</label>}
       <div style={{flex:1}}/><span className="hint">{rows.length} pratiche</span>
     </div>
     <div className="tbl-wrap">
@@ -2197,7 +2220,7 @@ function Pose({comp,db,up,flash,openPose}){
       <tbody>{rows.map(({p,c})=>{
         const prods=[...c.climaList,p.termico].filter(Boolean);
         return(<tr key={p.id} onClick={()=>openPose(structuredClone(p))} style={{cursor:"pointer"}}>
-          <td><b>{p.nContratto||"—"}</b>{p.files&&p.files.length>0&&<span title={p.files.length+" allegati"} style={{marginLeft:5}}>📎{p.files.length}</span>}</td><td>{c.cliente}</td><td>{c.comune?<><div>{c.comune}</div><div className="hint" style={{fontSize:10.5}}>{c.provincia}</div></>:c.provincia}</td>
+          <td><b>{p.nContratto||"—"}</b>{p.files&&p.files.length>0&&<span title={p.files.length+" allegati"} style={{marginLeft:5}}>📎{p.files.length}</span>}{isDoppio({p,c})&&<span className="dop" title="Stesso contratto, oppure stesso cliente con stesso importo e stessa data">doppione?</span>}</td><td>{c.cliente}</td><td>{c.comune?<><div>{c.comune}</div><div className="hint" style={{fontSize:10.5}}>{c.provincia}</div></>:c.provincia}</td>
           <td className="hint">{prods.length?prods.map((x,i)=>(<span key={i} className={"tag "+(c.ambito==="Termico"?"warm":"")} style={{marginRight:4}}>{x}</span>)):"—"}</td>
           <td>{p.consulente}</td><td>{c.effInst||<span className="miss">—</span>}</td>
           <td>{c.finestra?<span className={"win win-"+(c.finestraStato||"na")}>{c.finestra}</span>:<span className="hint">—</span>}{c.fuoriFinestra&&<div><span className="flag" style={{marginTop:3,display:"inline-block"}}>fuori periodo</span></div>}</td>
@@ -2206,7 +2229,7 @@ function Pose({comp,db,up,flash,openPose}){
           <td className="num eur">{c.fase?eur(c.compensoInst):""}</td>
           <td className="num eur">{p.nContratto?eur(totByContr[p.nContratto]):""}</td>
           <td>{c.daPian&&<span className="flag">SÌ</span>}</td>
-          <td onClick={e=>{e.stopPropagation();del(p.id);}}><button className="btn link">✕</button></td>
+          <td onClick={e=>{e.stopPropagation();del(p.id);}}><button className="btn del sm" title="Elimina la pratica">🗑 Elimina</button></td>
         </tr>);
       })}</tbody></table>}
     </div>
@@ -2354,7 +2377,7 @@ function DateField({value,onChange}){
 /* La scheda lavora su una BOZZA: le modifiche si vedono subito (margini, provvigione,
    fasi) ma entrano nel gestionale solo con «Salva». Chiudendo senza salvare si torna a
    com'era, così si possono fare prove senza toccare i dati. */
-function PoseForm({p,db,onChange,onClose}){
+function PoseForm({p,db,onChange,onClose,onDelete,esiste}){
   const [f,setF]=useState(p);
   const [base,setBase]=useState(p);        // com'è la pratica salvata
   const c=useMemo(()=>compute(f,db),[f,db]);
@@ -2375,6 +2398,12 @@ function PoseForm({p,db,onChange,onClose}){
       if(!confirm("Ci sono modifiche non salvate.\n\nChiudere senza salvare? Le modifiche andranno perse."))return;
       const prima=idFile(base);idFile(f).forEach(id=>{if(!prima.has(id))fileDel(id).catch(()=>{});});
     }
+    onClose();
+  };
+  /* elimina la pratica salvata; gli allegati aggiunti nella bozza e mai salvati si buttano */
+  const elimina=()=>{
+    if(!onDelete||!onDelete(base))return;
+    const prima=idFile(base);idFile(f).forEach(id=>{if(!prima.has(id))fileDel(id).catch(()=>{});});
     onClose();
   };
   const salvaRef=useRef(salva);salvaRef.current=salva;
@@ -3071,7 +3100,7 @@ function PoseForm({p,db,onChange,onClose}){
       <div className="ft"><span className="hint">{c.effInst?("Installatore: "+c.effInst):"Da assegnare — nessun installatore"} · {modificata
           ? <b style={{color:"var(--accent)"}}>● modifiche non salvate</b>
           : <b style={{color:"var(--brand-dk)"}}>✓ tutto salvato</b>}</span>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}><button className="btn gh" onClick={()=>ordineLavoro(f,db,c)} title="PDF senza prezzi da mandare all'installatore">📄 Ordine di lavoro</button><button className="btn gh" onClick={()=>schedaIntervento(f,db,c)}>🖨 Stampa scheda</button>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>{esiste&&onDelete&&<button className="btn del" onClick={elimina}>🗑 Elimina pratica</button>}<button className="btn gh" onClick={()=>ordineLavoro(f,db,c)} title="PDF senza prezzi da mandare all'installatore">📄 Ordine di lavoro</button><button className="btn gh" onClick={()=>schedaIntervento(f,db,c)}>🖨 Stampa scheda</button>
           <button className="btn" onClick={salva} disabled={!modificata} style={modificata?null:{opacity:.45,cursor:"default"}} title="Salva le modifiche (⌘S / Ctrl+S)">💾 Salva</button>
           <button className="btn gh" onClick={chiudi}>Chiudi</button></div></div>
     </div>
@@ -3079,29 +3108,45 @@ function PoseForm({p,db,onChange,onClose}){
 }
 
 /* ---------- CRUD generico anagrafiche ---------- */
+/* doppioni: stesso nome, senza badare a maiuscole e spazi */
+const normNome=s=>String(s||"").trim().replace(/\s+/g," ").toLowerCase();
+const contaChiavi=(items,chiave)=>{const m={};items.forEach(x=>{const k=chiave(x);if(k)m[k]=(m[k]||0)+1;});return m;};
+/* chi è in sola lettura non elimina davvero: la cancellazione diventa una proposta */
+const msgElimina=(ro,cosa)=>ro?"Eliminazione da inviare all'amministratore":cosa+" eliminato";
+const testoEliminaPratica=(p,cliente)=>"Eliminare la pratica"+(p.nContratto?" n. "+p.nContratto:"")+(cliente?" di «"+cliente+"»":"")
+  +((+p.importoVendita||0)>0?" da "+eur(+p.importoVendita):"")+"?\n\nSi cancellano anche le foto e le fatture allegate. L'operazione non si può annullare.";
+
 function Crud({title,items,cols,form,onSave,onDel,extra}){
   const [edit,setEdit]=useState(null);
   const [q,setQ]=useState("");
   const norm=it=>Object.entries(it).filter(([k])=>k!=="id"&&k!=="__new").map(([,v])=>Array.isArray(v)?v.join(" "):(typeof v==="string"?v:"")).join(" ").toLowerCase();
-  const shown=q.trim()?items.filter(it=>norm(it).includes(q.trim().toLowerCase())):items;
+  const doppi=useMemo(()=>contaChiavi(items,x=>normNome(x.nome)),[items]);
+  const isDoppio=it=>(doppi[normNome(it.nome)]||0)>1;
+  const nDoppi=items.filter(isDoppio).length;
+  const [soloDoppi,setSoloDoppi]=useState(false);
+  let shown=q.trim()?items.filter(it=>norm(it).includes(q.trim().toLowerCase())):items;
+  if(soloDoppi&&nDoppi)shown=shown.filter(isDoppio).sort((a,b)=>normNome(a.nome).localeCompare(normNome(b.nome)));
+  const cosa=title.toLowerCase();
   return(<>
     <div className="filters" style={{marginBottom:12}}>
-      <input placeholder={"Cerca "+title.toLowerCase()+"…"} value={q} onChange={e=>setQ(e.target.value)} style={{minWidth:260}}/>
-      <span className="hint">{shown.length}{q.trim()?(" di "+items.length):""}</span>
+      <input placeholder={"Cerca "+cosa+"…"} value={q} onChange={e=>setQ(e.target.value)} style={{minWidth:260}}/>
+      <span className="hint">{shown.length}{q.trim()||(soloDoppi&&nDoppi)?(" di "+items.length):""}</span>
+      {nDoppi>0&&<label className="hint" style={{display:"inline-flex",gap:6,alignItems:"center",cursor:"pointer",color:"#7a5c00",fontWeight:600}}>
+        <input type="checkbox" checked={soloDoppi} onChange={e=>setSoloDoppi(e.target.checked)}/> Solo possibili doppioni ({nDoppi})</label>}
       <div style={{flex:1}}/>
       <button className="btn" onClick={()=>setEdit({id:uid(),__new:true})}>+ Aggiungi</button>
     </div>
     <div className="tbl-wrap"><table><thead><tr>{cols.map(c=>(<th key={c.k} className={c.num?"num":""}>{c.l}</th>))}<th></th></tr></thead>
       <tbody>{shown.length===0?<tr><td colSpan={cols.length+1}><div className="empty hint">{q.trim()?"Nessun risultato per «"+q+"».":"Nessun record."}</div></td></tr>:
       shown.map(it=>(<tr key={it.id} onClick={()=>setEdit(structuredClone(it))} style={{cursor:"pointer"}}>
-        {cols.map(c=>(<td key={c.k} className={c.num?"num "+(c.eur?"eur":""):""}>{c.render?c.render(it):(it[c.k]||"")}</td>))}
-        <td onClick={e=>{e.stopPropagation();onDel(it.id);}}><button className="btn link">✕</button></td></tr>))}
+        {cols.map((c,i)=>(<td key={c.k} className={c.num?"num "+(c.eur?"eur":""):""}>{c.render?c.render(it):(it[c.k]||"")}{i===0&&isDoppio(it)&&<span className="dop" title="C'è un'altra scheda con lo stesso nome">doppione?</span>}</td>))}
+        <td onClick={e=>{e.stopPropagation();onDel(it.id);}}><button className="btn del sm" title={"Elimina "+cosa}>🗑 Elimina</button></td></tr>))}
       </tbody></table></div>
     {extra}
     {edit&&<div className="ovl" onClick={e=>{if(e.target.classList.contains("ovl"))setEdit(null);}}>
       <div className="modal" style={{maxWidth:560}}><div className="hd"><h2>{edit.__new?"Nuovo":"Modifica"} · {title}</h2><button className="x" onClick={()=>setEdit(null)}>×</button></div>
       <div className="bd">{form(edit,(k,v)=>setEdit(s=>({...s,[k]:v})))}</div>
-      <div className="ft"><span/><div style={{display:"flex",gap:10}}><button className="btn gh" onClick={()=>setEdit(null)}>Annulla</button><button className="btn" onClick={()=>{onSave(edit);setEdit(null);}}>Salva</button></div></div>
+      <div className="ft">{edit.__new?<span/>:<button className="btn del" onClick={()=>{if(onDel(edit.id))setEdit(null);}}>🗑 Elimina {cosa}</button>}<div style={{display:"flex",gap:10}}><button className="btn gh" onClick={()=>setEdit(null)}>Annulla</button><button className="btn" onClick={()=>{onSave(edit);setEdit(null);}}>Salva</button></div></div>
       </div></div>}
   </>);
 }
@@ -3110,21 +3155,38 @@ const Fi=(edit,set,label,k,type="text",opts=null)=>(<div className="fld" key={k}
   :<input type={type} value={edit[k]||""} onChange={e=>set(k,e.target.value)}/>}</div>);
 
 function Clienti({db,comp,up,flash}){
+  const ro=useContext(SoloLettura);
+  /* eliminare un doppione non deve lasciare pratiche senza cliente: se c'è un'altra scheda
+     con lo stesso nome, le pratiche si spostano su quella */
+  const elimina=id=>{
+    const me=db.clienti.find(c=>c.id===id)||{};
+    const n=db.pose.filter(p=>p.clienteId===id).length;
+    const gemello=db.clienti.find(c=>c.id!==id&&normNome(c.nome)&&normNome(c.nome)===normNome(me.nome));
+    if(n&&gemello){
+      const dove=[gemello.comune,gemello.provincia].filter(Boolean).join(", ");
+      if(!confirm("«"+(me.nome||"")+"» ha "+n+(n===1?" pratica":" pratiche")+".\n\nC'è un'altra scheda con lo stesso nome"+(dove?" ("+dove+")":"")+": sposto "+(n===1?"la pratica":"le pratiche")+" su quella ed elimino questa?"))return false;
+      up(d=>{d.pose.forEach(p=>{if(p.clienteId===id)p.clienteId=gemello.id;});d.clienti=d.clienti.filter(c=>c.id!==id);return d;});
+      flash(ro?msgElimina(ro):"Cliente eliminato, pratiche spostate sull'altra scheda");return true;
+    }
+    if(!confirm(n?("Attenzione: "+n+" pratiche usano «"+(me.nome||"questo cliente")+"» e resteranno senza cliente. Eliminare comunque?"):"Eliminare il cliente «"+(me.nome||"")+"»?"))return false;
+    up(d=>{d.clienti=d.clienti.filter(c=>c.id!==id);return d;});flash(msgElimina(ro,"Cliente"));return true;
+  };
   return <Crud title="Cliente"
     items={db.clienti}
     cols={[{k:"nome",l:"Cliente"},{k:"referente",l:"Referente"},{k:"tel",l:"Telefono"},{k:"comune",l:"Comune / Paese"},{k:"provincia",l:"Provincia"},{k:"email",l:"Email"}]}
     form={(e,s)=>(<div className="form">{Fi(e,s,"Cliente / Ragione sociale","nome")}{Fi(e,s,"Referente","referente")}{Fi(e,s,"Codice fiscale / P.IVA","piva")}{Fi(e,s,"Telefono","tel")}{Fi(e,s,"Email","email")}{Fi(e,s,"Indirizzo","indirizzo")}{Fi(e,s,"Comune / Paese","comune")}<div className="fld"><label>Provincia</label><select value={e.provincia||""} onChange={ev=>s("provincia",ev.target.value)}><option value=""></option>{ALL_PROV.map(p=>(<option key={p}>{p}</option>))}</select></div>{Fi(e,s,"CAP","cap")}<div className="fld full">{Fi(e,s,"Note","note")}</div>{!e.__new&&<div className="fld full"><button type="button" className="btn gh" onClick={()=>schedaCliente(e,db,comp)}>🖨 Stampa scheda cliente</button></div>}</div>)}
     onSave={x=>{up(d=>{const i=d.clienti.findIndex(c=>c.id===x.id);delete x.__new;if(i>=0)d.clienti[i]=x;else d.clienti.push(x);return d;});flash("Cliente salvato");}}
-    onDel={id=>{const n=db.pose.filter(p=>p.clienteId===id).length;if(!confirm(n?("Attenzione: "+n+" pratiche usano questo cliente e resteranno senza cliente. Eliminare comunque?"):"Eliminare il cliente?"))return;up(d=>{d.clienti=d.clienti.filter(c=>c.id!==id);return d;});flash("Cliente eliminato");}}/>;
+    onDel={elimina}/>;
 }
 function Installatori({db,comp,up,flash}){
+  const ro=useContext(SoloLettura);
   const stat=useMemo(()=>{const m={};db.installatori.forEach(i=>m[i.nome]={n:0,c:0});comp.forEach(({c})=>{if(c.effInst&&m[c.effInst]){m[c.effInst].n++;m[c.effInst].c+=c.compensoInst;}});return m;},[db,comp]);
   return <Crud title="Installatore"
     items={db.installatori}
     cols={[{k:"nome",l:"Installatore"},{k:"referente",l:"Referente"},{k:"tel",l:"Telefono"},{l:"Regioni",k:"_reg",render:i=>(i.regioni||[]).join(", ")},{l:"N. pose",num:true,k:"_n",render:i=>(stat[i.nome]?.n||0)},{l:"Compenso tot.",num:true,eur:true,k:"_c",render:i=>eur(stat[i.nome]?.c||0)}]}
     form={(e,s)=>(<div className="form">{Fi(e,s,"Installatore / Ragione sociale","nome")}{Fi(e,s,"Referente","referente")}{Fi(e,s,"Telefono","tel")}{Fi(e,s,"Email","email")}{Fi(e,s,"P.IVA / C.F.","piva")}{Fi(e,s,"PEC","pec")}<div className="fld full"><label>Sede (indirizzo, CAP, città)</label><input value={e.sede||""} onChange={ev=>s("sede",ev.target.value)}/></div><div className="fld full"><label>Regioni di competenza</label><RegionSelect value={e.regioni} onChange={v=>s("regioni",v)}/></div><div className="fld full"><label>Note (abilitazioni DM 37/2008, F-GAS, REA, scadenze…)</label><textarea rows="3" value={e.note||""} onChange={ev=>s("note",ev.target.value)}/></div></div>)}
     onSave={x=>{up(d=>{const i=d.installatori.findIndex(c=>c.id===x.id);delete x.__new;if(i>=0)d.installatori[i]=x;else d.installatori.push(x);return d;});flash("Installatore salvato");}}
-    onDel={id=>{const nome=(db.installatori.find(i=>i.id===id)||{}).nome;const np=db.pose.filter(p=>p.installatore===nome).length;const nz=Object.values(db.zoneMap).filter(v=>Array.isArray(v)?v.includes(nome):v===nome).length;const msg=(np||nz)?("Questo installatore è usato in "+np+" pratiche e "+nz+" province. Eliminarlo lascerà quei riferimenti orfani. Eliminare comunque?"):"Eliminare l'installatore?";if(!confirm(msg))return;up(d=>{d.installatori=d.installatori.filter(c=>c.id!==id);Object.keys(d.zoneMap).forEach(k=>{const v=d.zoneMap[k];if(Array.isArray(v)){const nv=v.filter(x=>x!==nome);if(nv.length)d.zoneMap[k]=nv;else delete d.zoneMap[k];}else if(v===nome)delete d.zoneMap[k];});return d;});flash("Installatore eliminato");}}/>;
+    onDel={id=>{const nome=(db.installatori.find(i=>i.id===id)||{}).nome;const np=db.pose.filter(p=>p.installatore===nome).length;const nz=Object.values(db.zoneMap).filter(v=>Array.isArray(v)?v.includes(nome):v===nome).length;const msg=(np||nz)?("Questo installatore è usato in "+np+" pratiche e "+nz+" province. Eliminarlo lascerà quei riferimenti orfani. Eliminare comunque?"):"Eliminare l'installatore «"+(nome||"")+"»?";if(!confirm(msg))return false;up(d=>{d.installatori=d.installatori.filter(c=>c.id!==id);Object.keys(d.zoneMap).forEach(k=>{const v=d.zoneMap[k];if(Array.isArray(v)){const nv=v.filter(x=>x!==nome);if(nv.length)d.zoneMap[k]=nv;else delete d.zoneMap[k];}else if(v===nome)delete d.zoneMap[k];});return d;});flash(msgElimina(ro,"Installatore"));return true;}}/>;
 }
 /* Prospetto provvigioni: le regole dicono liquidazione DOPO 15 GG dalla data di
    installazione e invio dei prospetti entro il 10 del mese. Qui si sceglie il mese di
@@ -3192,6 +3254,7 @@ function ProspettoProvv({db,comp}){
 }
 
 function Consulenti({db,comp,up,flash}){
+  const ro=useContext(SoloLettura);
   const stat=useMemo(()=>{const m={};db.consulenti.forEach(x=>m[x.nome]={n:0,v:0,nr:0,vr:0,idea:0,ko:0,mrg:0,net:0,nm:0,sotto:0,pieno:0,extra:0,perso:0,prov:0,provLiq:0,provKo:0,mrgR:0,netR:0,nmR:0,addeb:0,addebDaVal:0});comp.forEach(({p,c})=>{const k=p.consulente;if(k&&m[k]){m[k].n++;m[k].v+=(+p.importoVendita||0);if(c.fase==="RECESSO"){m[k].nr++;m[k].vr+=(+p.importoVendita||0);if(c.motivo==="Cambio idea")m[k].idea++;if(c.motivo==="KO finanziario")m[k].ko++;}else if(c.fase&&c.margine.ok){m[k].nm++;m[k].mrg+=c.margine.eur;m[k].net+=c.margine.netto;m[k].extra+=(c.margine.sopraCodice||0);if(c.margine.okReale){m[k].nmR++;m[k].mrgR+=c.margine.eurReale;m[k].netR+=c.margine.netto;}const pv=c.margine.provv||{};if(pv.pct!==null&&pv.pct!==undefined){m[k].prov+=pv.eur;if(p.dataInstallazione&&addDays(p.dataInstallazione,15)<=today())m[k].provLiq+=pv.eur;}if(pv.pct===null)m[k].provKo++;m[k].addeb+=(c.margine.addebitoApplicato||0);if(c.margine.addebitoDaValutare)m[k].addebDaVal++;if(c.margine.posizione==="sotto")m[k].sotto++;if(c.margine.posizione==="pieno")m[k].pieno++;}}});return m;},[db,comp]);
   const pctOf=s=>(s&&s.net>0)?(s.mrg/s.net*100):null;
   const pctROf=s=>(s&&s.netR>0)?(s.mrgR/s.netR*100):null;
@@ -3201,7 +3264,7 @@ function Consulenti({db,comp,up,flash}){
     form={(e,s)=>(<div className="form">{Fi(e,s,"Consulente","nome")}{Fi(e,s,"Ruolo","ruolo","text",RUOLI)}<div className="fld"><label>Capo area riferimento</label><select value={e.capoArea||""} onChange={ev=>s("capoArea",ev.target.value)}><option value=""></option>{db.consulenti.filter(x=>x.ruolo==="Capo Area").map(x=>(<option key={x.id}>{x.nome}</option>))}</select></div>{Fi(e,s,"Telefono","tel")}{Fi(e,s,"Email","email")}<div className="fld full"><label>Regioni di competenza</label><RegionSelect value={e.regioni} onChange={v=>s("regioni",v)}/></div></div>)}
     extra={<ProspettoProvv db={db} comp={comp}/>}
     onSave={x=>{up(d=>{const i=d.consulenti.findIndex(c=>c.id===x.id);delete x.__new;if(i>=0)d.consulenti[i]=x;else d.consulenti.push(x);return d;});flash("Consulente salvato");}}
-    onDel={id=>{const nome=(db.consulenti.find(i=>i.id===id)||{}).nome;const n=db.pose.filter(p=>p.consulente===nome).length;if(!confirm(n?("Questo consulente è usato in "+n+" pratiche. Eliminarlo lascerà quei riferimenti orfani. Eliminare comunque?"):"Eliminare il consulente?"))return;up(d=>{d.consulenti=d.consulenti.filter(c=>c.id!==id);return d;});flash("Consulente eliminato");}}/>;
+    onDel={id=>{const nome=(db.consulenti.find(i=>i.id===id)||{}).nome;const n=db.pose.filter(p=>p.consulente===nome).length;if(!confirm(n?("Questo consulente è usato in "+n+" pratiche. Eliminarlo lascerà quei riferimenti orfani. Eliminare comunque?"):"Eliminare il consulente «"+(nome||"")+"»?"))return false;up(d=>{d.consulenti=d.consulenti.filter(c=>c.id!==id);return d;});flash(msgElimina(ro,"Consulente"));return true;}}/>;
 }
 
 /* ---------- Zone ---------- */
