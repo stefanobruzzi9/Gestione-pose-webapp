@@ -270,7 +270,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="12 ott 2026 · 16";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="12 ott 2026 · 17";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -3585,6 +3585,171 @@ const COLS={
 };
 const norm=s=>String(s||"").trim().toLowerCase().replace(/\s+/g," ");
 
+/* ---------- aggiornamento preparato (file .json) ----------
+   Un file preparato fuori dal gestionale, per esempio confrontando lo stato ordini
+   Ecoliving con i dati: pratiche e clienti nuovi, correzioni campo per campo, consulenti
+   da rinominare o da creare. Prima di applicare si confronta tutto con i dati di adesso:
+   se un dato è cambiato dopo la preparazione non si tocca (resta deselezionato). Si
+   annulla dal registro degli import, come gli altri. */
+const tokNome=s=>String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9 ]/g," ").split(/\s+/).filter(Boolean);
+const levenshtein=(a,b)=>{let p=Array.from({length:b.length+1},(_,i)=>i);
+  for(let i=1;i<=a.length;i++){const q=[i];for(let j=1;j<=b.length;j++)q.push(Math.min(p[j]+1,q[j-1]+1,p[j-1]+(a[i-1]!==b[j-1]?1:0)));p=q;}
+  return p[b.length];};
+/* stesso nome di persona: stesse parole in qualsiasi ordine, un nome contenuto nell'altro
+   (Marinoni Giovanni ↔ Marinoni Giovanni Claudio) o una lettera di differenza (Miletti ↔ Milletti) */
+function stessoNome(a,b){
+  const ta=tokNome(a),tb=tokNome(b);if(!ta.length||!tb.length)return false;
+  const sa=[...ta].sort(),sb=[...tb].sort();
+  if(sa.join(" ")===sb.join(" "))return true;
+  const [corto,lungo]=ta.length<=tb.length?[ta,tb]:[tb,ta];
+  if(corto.length>=2&&corto.every(t=>lungo.includes(t)))return true;
+  return sa.length===sb.length&&sa.every((x,i)=>x.length>3&&levenshtein(x,sb[i])<=1);
+}
+const normContratto=s=>String(s||"").toLowerCase().replace(/\s+/g,"").replace(/^c(?=\d+$)/,"");
+const ORDINE_GRUPPI=["Consulenti","Zone dei consulenti","Nuove pratiche","Correzioni scelte da te","Nomi clienti corretti","Consulenti assegnati","Dati mancanti completati dal file"];
+
+function preparaAggiornamento(pk,db){
+  const voci=[],avvisi=[];
+  const cons=pk.consulenti||{};
+  /* 1. consulenti da rinominare: «Miletti» diventa «Milletti» anche su tutte le sue pratiche */
+  const rinominati={};
+  (cons.rinomina||[]).forEach(({da,a})=>{
+    if(db.consulenti.some(c=>normNome(c.nome)===normNome(a))){rinominati[normNome(da)]=a;return;}
+    const c=db.consulenti.find(x=>normNome(x.nome)===normNome(da))||db.consulenti.find(x=>stessoNome(x.nome,da));
+    if(!c){avvisi.push("Consulente «"+da+"» da rinominare in «"+a+"»: non trovato in anagrafica.");return;}
+    rinominati[normNome(c.nome)]=a;rinominati[normNome(da)]=a;
+    const ops=[{t:"mod",k:"consulenti",id:c.id,f:"nome",prima:c.nome,dopo:a}];
+    db.pose.forEach(p=>{if(normNome(p.consulente)===normNome(c.nome))ops.push({t:"mod",k:"pose",id:p.id,f:"consulente",prima:p.consulente,dopo:a});});
+    db.consulenti.forEach(x=>{if(normNome(x.capoArea)===normNome(c.nome))ops.push({t:"mod",k:"consulenti",id:x.id,f:"capoArea",prima:x.capoArea,dopo:a});});
+    voci.push({key:"ren:"+c.id,gruppo:"Consulenti",scheda:"Consulente "+c.nome,campo:"nome",prima:c.nome,dopo:a,
+      nota:ops.length>1?"aggiornato anche su "+(ops.length-1)+(ops.length===2?" pratica":" pratiche"):"",ops,on:true});
+  });
+  /* il nome giusto in anagrafica, dopo le rinomine */
+  const risolvi=nome=>{
+    if(!nome)return {nome,trovato:true};
+    const r=rinominati[normNome(nome)];if(r)return {nome:r,trovato:true};
+    const c=db.consulenti.find(x=>normNome(x.nome)===normNome(nome))||db.consulenti.find(x=>stessoNome(x.nome,nome));
+    if(c)return {nome:rinominati[normNome(c.nome)]||c.nome,trovato:true};
+    return {nome,trovato:false};
+  };
+  /* 2. consulenti da creare se mancano */
+  const creati=new Set();
+  (cons.creaSeMancano||[]).forEach(nome=>{
+    if(risolvi(nome).trovato)return;
+    creati.add(normNome(nome));
+    voci.push({key:"cons:"+nome,gruppo:"Consulenti",scheda:"Nuovo consulente",campo:"",prima:"—",dopo:nome,nota:"ruolo Consulente vendita",
+      ops:[{t:"agg",k:"consulenti",id:uid(),v:{nome,ruolo:"Consulente vendita",regioni:[]}}],on:true});
+  });
+  const cons2=nome=>{const r=risolvi(nome);return {nome:r.nome,ok:r.trovato||creati.has(normNome(nome))};};
+  /* 2b. zone di competenza: le regioni dei suoi ordini che mancano nella scheda del consulente */
+  Object.entries(cons.regioni||{}).forEach(([nome,regs])=>{
+    const nuovo=voci.find(v=>v.key==="cons:"+nome);
+    if(nuovo){nuovo.ops[0].v.regioni=[...regs];nuovo.nota="ruolo Consulente vendita · "+regs.join(", ");return;}
+    const r=risolvi(nome);
+    const c=db.consulenti.find(x=>(rinominati[normNome(x.nome)]||x.nome)===r.nome)||db.consulenti.find(x=>stessoNome(x.nome,nome));
+    if(!c){avvisi.push("Zone di competenza: il consulente «"+nome+"» non è in anagrafica.");return;}
+    const ha=Array.isArray(c.regioni)?c.regioni:[];
+    const manca=regs.filter(x=>!ha.includes(x));
+    if(!manca.length)return;
+    const dopo=[...ha,...manca];
+    voci.push({key:"reg:"+c.id,gruppo:"Zone dei consulenti",scheda:"Consulente "+(rinominati[normNome(c.nome)]||c.nome),campo:"Regioni",
+      prima:ha.join(", ")||"—",dopo:dopo.join(", "),nota:"aggiunte dal file: "+manca.join(", "),
+      ops:[{t:"mod",k:"consulenti",id:c.id,f:"regioni",prima:c.regioni,dopo}],on:true});
+  });
+  /* 3. pratiche nuove, ciascuna col suo cliente */
+  (pk.nuove||[]).forEach((n,i)=>{
+    const pr={...n.pratica},cl=n.cliente?{...n.cliente}:null;
+    const cc=cons2(pr.consulente);if(pr.consulente)pr.consulente=cc.nome;
+    const giaContr=pr.nContratto&&db.pose.some(p=>normContratto(p.nContratto)===normContratto(pr.nContratto));
+    const giaCli=cl&&db.clienti.some(c=>normNome(c.nome)===normNome(cl.nome));
+    const giaCliId=!cl&&!db.clienti.some(c=>c.id===pr.clienteId);
+    const ops=[];if(cl)ops.push({t:"agg",k:"clienti",id:cl.id,v:cl});ops.push({t:"agg",k:"pose",id:pr.id,v:pr});
+    voci.push({key:"new:"+i,gruppo:"Nuove pratiche",scheda:(cl?cl.nome:"")+(pr.nContratto?" · n. "+pr.nContratto:""),campo:pr.recesso?"in recesso":"attiva",
+      prima:"—",dopo:[pr.dataVendita&&fmtD(pr.dataVendita),pr.importoVendita&&eur(+pr.importoVendita),pr.consulente,pr.motivoRecesso].filter(Boolean).join(" · "),
+      nota:giaContr?"⚠ c'è già una pratica con questo contratto":giaCli?"⚠ c'è già un cliente con questo nome":giaCliId?"⚠ il cliente non c'è più":(!cc.ok?"consulente non in anagrafica":""),
+      ops,on:!giaContr&&!giaCli&&!giaCliId});
+  });
+  /* 4. correzioni campo per campo, solo se il dato è ancora com'era quando è stato preparato */
+  (pk.ops||[]).forEach((op,i)=>{
+    const r=(db[op.k]||[]).find(x=>x.id===op.id);
+    let dopo=op.dopo,nota=op.nota||"";
+    if(op.f==="consulente"){const cc=cons2(dopo);dopo=cc.nome;if(!cc.ok)nota="consulente non in anagrafica";}
+    const v={key:"op:"+i,gruppo:op.gruppo||"Altre modifiche",scheda:etichettaRec(db,op.k,op.id),campo:etichettaCampo(op.f),
+      prima:r?fmtVal(r[op.f],db):"—",dopo:fmtVal(dopo,db),nota,ops:[{...op,dopo}],on:true};
+    if(!r){v.on=false;v.nota="la scheda non c'è più";}
+    else if(uguali(r[op.f],dopo)){v.on=false;v.gia=true;v.nota="già così";}
+    else if(!uguali(r[op.f],op.prima)){v.on=false;v.nota="cambiato dopo la preparazione (era «"+fmtVal(op.prima,db)+"»): non lo tocco";}
+    voci.push(v);
+  });
+  return {voci,avvisi};
+}
+
+function Aggiornamento({db,setDb,flash}){
+  const [pk,setPk]=useState(null);
+  const [voci,setVoci]=useState([]);
+  const [avvisi,setAvvisi]=useState([]);
+  const [err,setErr]=useState("");
+  const fileRef=useRef();
+  const carica=e=>{
+    const file=e.target.files[0];e.target.value="";if(!file)return;
+    const fr=new FileReader();
+    fr.onload=()=>{
+      try{
+        const j=JSON.parse(fr.result);
+        if(j.formato!=="arquati-aggiornamento-1")throw new Error("non è un file di aggiornamento del gestionale");
+        const r=preparaAggiornamento(j,db);
+        setPk(j);setVoci(r.voci);setAvvisi(r.avvisi);setErr("");
+      }catch(x){setPk(null);setVoci([]);setErr("File non valido: "+x.message);}
+    };
+    fr.readAsText(file);
+  };
+  const sel=voci.filter(v=>v.on);
+  const gruppi=[...ORDINE_GRUPPI,...new Set(voci.map(v=>v.gruppo).filter(g=>!ORDINE_GRUPPI.includes(g)))]
+    .map(g=>[g,voci.filter(v=>v.gruppo===g)]).filter(([,vs])=>vs.length);
+  const tocca=(key,on)=>setVoci(vs=>vs.map(v=>v.key===key?{...v,on}:v));
+  const tutti=(g,on)=>setVoci(vs=>vs.map(v=>v.gruppo===g&&!v.gia?{...v,on}:v));
+  const applica=()=>{
+    if(!sel.length)return;
+    const nNuove=sel.filter(v=>v.gruppo==="Nuove pratiche").length;
+    if(!confirm("Applicare "+sel.length+" voci"+(nNuove?" (di cui "+nNuove+" pratiche nuove)":"")+"?\n\nSi può annullare dal registro degli import."))return;
+    const batch="agg_"+uid();
+    const ops=sel.flatMap(v=>v.ops).map(op=>op.t==="agg"?{...op,v:{...op.v,id:op.id,source:"import",batch,importedAt:today()}}:op);
+    /* per annullare: il valore di prima di ogni campo toccato */
+    const undo=ops.filter(op=>op.t==="mod").map(op=>{const r=(db[op.k]||[]).find(x=>x.id===op.id)||{};return {t:"mod",k:op.k,id:op.id,f:op.f,prima:op.dopo,dopo:r[op.f]===undefined?"":r[op.f]};});
+    const {db:nuovo}=applicaOps(db,ops);
+    nuovo.imports=[...(nuovo.imports||[]),{batch,at:new Date().toISOString(),tipo:"aggiornamento",titolo:pk.titolo||"Aggiornamento preparato",n:sel.length,undo}];
+    setDb(nuovo);
+    flash("Aggiornamento applicato: "+sel.length+" voci");
+    setPk(null);setVoci([]);setAvvisi([]);
+  };
+  return(<div className="card"><h3>Aggiornamento preparato <span className="tag">file .json</span></h3><div className="bd">
+    <p className="hint">Carica un file di aggiornamento preparato fuori dal gestionale, per esempio dal confronto con lo stato ordini Ecoliving. Prima di applicare vedi tutto: ogni voce si può togliere. I dati cambiati dopo la preparazione non vengono toccati.</p>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:8}}>
+      <button className="btn" onClick={()=>fileRef.current.click()}>⤒ Scegli il file di aggiornamento</button>
+      <input ref={fileRef} type="file" accept=".json,application/json" style={{display:"none"}} onChange={carica}/>
+      {pk&&<button className="btn gh" onClick={()=>{setPk(null);setVoci([]);}}>Chiudi senza applicare</button>}
+    </div>
+    {err&&<div className="alert" style={{marginTop:10}}>{err}</div>}
+    {pk&&<div style={{marginTop:14}}>
+      <div className="avviso bozza" style={{marginBottom:10}}><div><b>{pk.titolo}</b><div className="hint">Preparato il {fmtD(pk.creato)}{pk.base?" sul "+pk.base:""} · {voci.length} voci, {sel.length} selezionate</div></div>
+        <button className="btn" disabled={!sel.length} onClick={applica}>✓ Applica {sel.length} voci</button></div>
+      {avvisi.map((a,i)=>(<div key={i} className="alert" style={{marginBottom:8}}>{a}</div>))}
+      {gruppi.map(([g,vs])=>{const on=vs.filter(v=>v.on).length,ferme=vs.filter(v=>!v.on&&!v.gia).length;return(
+        <details key={g} open={g!=="Dati mancanti completati dal file"} style={{marginBottom:10,border:"1px solid var(--line)",borderRadius:10,padding:"8px 12px"}}>
+          <summary style={{cursor:"pointer",fontWeight:700,color:"var(--brand-dk)"}}>{g} <span className="hint">· {on} di {vs.length} selezionate{ferme?" · "+ferme+" da controllare":""}</span></summary>
+          <div style={{display:"flex",gap:8,margin:"8px 0"}}><button className="btn gh sm" onClick={()=>tutti(g,true)}>Seleziona tutte</button><button className="btn gh sm" onClick={()=>tutti(g,false)}>Nessuna</button></div>
+          <div className="tbl-wrap" style={{border:0,boxShadow:"none"}}><table>
+            <thead><tr><th></th><th>Scheda</th><th>Campo</th><th>Adesso</th><th>Diventa</th><th>Nota</th></tr></thead>
+            <tbody>{vs.map(v=>(<tr key={v.key} style={{opacity:v.on?1:.6}}>
+              <td><input type="checkbox" checked={v.on} disabled={!!v.gia} onChange={e=>tocca(v.key,e.target.checked)}/></td>
+              <td>{v.scheda}</td><td className="hint">{v.campo}</td><td>{v.prima}</td><td><b>{v.dopo}</b></td>
+              <td className="hint" style={{color:v.nota&&v.nota.startsWith("⚠")||/cambiato|non c'è|non in anagrafica/.test(v.nota||"")?"#A93A1B":undefined}}>{v.nota}</td>
+            </tr>))}</tbody></table></div>
+        </details>);})}
+    </div>}
+  </div></div>);
+}
+
 function Importa({db,setDb,flash}){
   const [ai,setAi]=useState(loadAi);
   const [tipo,setTipo]=useState("posa");
@@ -3691,11 +3856,15 @@ function Importa({db,setDb,flash}){
 
   /* ANNULLA LOTTO: rimuove solo cio' che quell'import aveva aggiunto */
   const annulla=b=>{
-    if(!confirm("Rimuovere i "+b.n+" record inseriti con questo import? I dati inseriti a mano non vengono toccati."))return;
-    const d=structuredClone(db);
+    const und=Array.isArray(b.undo)?b.undo:[];
+    if(!confirm(und.length?("Annullare «"+(b.titolo||"aggiornamento")+"»? Si tolgono le schede nuove e si rimettono i "+und.length+" campi com'erano, tranne quelli cambiati a mano dopo."):("Rimuovere i "+b.n+" record inseriti con questo import? I dati inseriti a mano non vengono toccati.")))return;
+    let d=structuredClone(db);
     ["clienti","installatori","consulenti","pose"].forEach(k=>{d[k]=d[k].filter(x=>x.batch!==b.batch);});
+    /* i campi corretti tornano com'erano, solo se nessuno li ha cambiati dopo */
+    const ok=und.filter(op=>!conflitto(d,op)).reverse();
+    if(ok.length)d=applicaOps(d,ok).db;
     d.imports=(d.imports||[]).filter(x=>x.batch!==b.batch);
-    setDb(d);flash("Import annullato");
+    setDb(d);flash(und.length&&ok.length<und.length?"Annullato; "+(und.length-ok.length)+" campi cambiati dopo restano come sono":"Import annullato");
   };
 
   const cols=COLS[tipo];
@@ -3703,6 +3872,7 @@ function Importa({db,setDb,flash}){
   const storia=(db.imports||[]).slice().reverse();
 
   return(<div className="grid" style={{gap:16}}>
+    <Aggiornamento db={db} setDb={setDb} flash={flash}/>
     <div className="card"><h3>1 · Che cosa stai fotografando?</h3><div className="bd">
       <div style={{display:"flex",gap:9,flexWrap:"wrap"}}>
         {TIPI.map(([k,lab,sub])=>(
@@ -3769,7 +3939,7 @@ function Importa({db,setDb,flash}){
           <table><thead><tr><th>Data</th><th>Tipo</th><th className="num">Record</th><th></th></tr></thead>
           <tbody>{storia.map(b=>(<tr key={b.batch}>
             <td className="mono">{fmtD(String(b.at).slice(0,10))}</td>
-            <td>{(TIPI.find(t=>t[0]===b.tipo)||["","?"])[1]}</td>
+            <td>{b.titolo||(TIPI.find(t=>t[0]===b.tipo)||["","?"])[1]}</td>
             <td className="num">{b.n}{b.clienti?" +"+b.clienti:""}</td>
             <td className="rowbtns"><button className="btn gh sm" onClick={()=>annulla(b)}>Annulla</button></td>
           </tr>))}</tbody></table>
