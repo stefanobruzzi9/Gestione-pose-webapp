@@ -270,7 +270,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="12 ott 2026 · 17";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="12 ott 2026 · 18";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -3672,6 +3672,11 @@ function preparaAggiornamento(pk,db){
   /* 4. correzioni campo per campo, solo se il dato è ancora com'era quando è stato preparato */
   (pk.ops||[]).forEach((op,i)=>{
     const r=(db[op.k]||[]).find(x=>x.id===op.id);
+    if(op.t==="del"){   /* eliminazione, per esempio di una scheda doppia */
+      voci.push({key:"op:"+i,gruppo:op.gruppo||"Altre modifiche",scheda:etichettaRec(db,op.k,op.id,r||op.prima),campo:"eliminazione",
+        prima:r?"presente":"—",dopo:"eliminata",nota:r?(op.nota||""):"già eliminata",ops:[op],on:!!r,gia:!r});
+      return;
+    }
     let dopo=op.dopo,nota=op.nota||"";
     if(op.f==="consulente"){const cc=cons2(dopo);dopo=cc.nome;if(!cc.ok)nota="consulente non in anagrafica";}
     const v={key:"op:"+i,gruppo:op.gruppo||"Altre modifiche",scheda:etichettaRec(db,op.k,op.id),campo:etichettaCampo(op.f),
@@ -3715,7 +3720,10 @@ function Aggiornamento({db,setDb,flash}){
     const batch="agg_"+uid();
     const ops=sel.flatMap(v=>v.ops).map(op=>op.t==="agg"?{...op,v:{...op.v,id:op.id,source:"import",batch,importedAt:today()}}:op);
     /* per annullare: il valore di prima di ogni campo toccato */
-    const undo=ops.filter(op=>op.t==="mod").map(op=>{const r=(db[op.k]||[]).find(x=>x.id===op.id)||{};return {t:"mod",k:op.k,id:op.id,f:op.f,prima:op.dopo,dopo:r[op.f]===undefined?"":r[op.f]};});
+    const undo=ops.flatMap(op=>{const r=(db[op.k]||[]).find(x=>x.id===op.id);
+      if(op.t==="mod")return [{t:"mod",k:op.k,id:op.id,f:op.f,prima:op.dopo,dopo:!r||r[op.f]===undefined?"":r[op.f]}];
+      if(op.t==="del"&&r)return [{t:"agg",k:op.k,id:op.id,v:structuredClone(r)}];   // si rimette la scheda com'era
+      return [];});
     const {db:nuovo}=applicaOps(db,ops);
     nuovo.imports=[...(nuovo.imports||[]),{batch,at:new Date().toISOString(),tipo:"aggiornamento",titolo:pk.titolo||"Aggiornamento preparato",n:sel.length,undo}];
     setDb(nuovo);
