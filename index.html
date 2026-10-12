@@ -270,7 +270,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="12 ott 2026 · 15";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="12 ott 2026 · 16";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -2216,10 +2216,11 @@ function Pose({comp,db,up,flash,openPose}){
     </div>
     <div className="tbl-wrap">
       {rows.length===0?<div className="empty"><div className="big">Nessuna pratica</div><div className="hint">Premi “Nuova pratica” per iniziare.</div></div>:
-      <table><thead><tr><th>Contratto</th><th>Cliente</th><th>Prov.</th><th>Prodotti</th><th>Consulente</th><th>Installatore</th><th>Periodo posa</th><th className="num">Margine</th><th>Fase</th><th className="num">Compenso</th><th className="num">Tot. contratto</th><th>Da progr.</th><th></th></tr></thead>
-      <tbody>{rows.map(({p,c})=>{
+      <table><thead><tr><th className="num" title="Numero progressivo delle pratiche in elenco">#</th><th>Contratto</th><th>Cliente</th><th>Prov.</th><th>Prodotti</th><th>Consulente</th><th>Installatore</th><th>Periodo posa</th><th className="num">Margine</th><th>Fase</th><th className="num">Compenso</th><th className="num">Tot. contratto</th><th>Da progr.</th><th></th></tr></thead>
+      <tbody>{rows.map(({p,c},i)=>{
         const prods=[...c.climaList,p.termico].filter(Boolean);
         return(<tr key={p.id} onClick={()=>openPose(structuredClone(p))} style={{cursor:"pointer"}}>
+          <td className="num hint" style={{fontWeight:700}}>{i+1}</td>
           <td><b>{p.nContratto||"—"}</b>{p.files&&p.files.length>0&&<span title={p.files.length+" allegati"} style={{marginLeft:5}}>📎{p.files.length}</span>}{isDoppio({p,c})&&<span className="dop" title="Stesso contratto, oppure stesso cliente con stesso importo e stessa data">doppione?</span>}</td><td>{c.cliente}</td><td>{c.comune?<><div>{c.comune}</div><div className="hint" style={{fontSize:10.5}}>{c.provincia}</div></>:c.provincia}</td>
           <td className="hint">{prods.length?prods.map((x,i)=>(<span key={i} className={"tag "+(c.ambito==="Termico"?"warm":"")} style={{marginRight:4}}>{x}</span>)):"—"}</td>
           <td>{p.consulente}</td><td>{c.effInst||<span className="miss">—</span>}</td>
