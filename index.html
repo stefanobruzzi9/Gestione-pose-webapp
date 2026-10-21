@@ -270,7 +270,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="20 ott 2026 · 20";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="21 ott 2026 · 21";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -3262,18 +3262,20 @@ function ProspettoProvv({db,comp}){
 const STATO_PROVV={liq:["Liquidabile","pz-pieno"],att:["In maturazione","pz-base"],dai:["Da installare","pz-base"],rec:["Recesso","pz-sotto"]};
 function righeProvv(nome,comp){
   const oggi=today();
-  return comp.filter(({p,c})=>c.fase&&p.consulente&&normNome(p.consulente)===normNome(nome)).map(({p,c})=>{
-    const m=c.margine||{},pv=m.provv||{};
-    const recesso=c.fase==="RECESSO";
-    const definita=!recesso&&pv.pct!==null&&pv.pct!==undefined;
-    const provv=definita?pv.eur:0;
-    const addebito=definita?(m.addebitoApplicato||0):0;
-    const liqDal=!recesso&&p.dataInstallazione?addDays(p.dataInstallazione,15):"";
-    const stato=recesso?"rec":(!p.dataInstallazione?"dai":(liqDal<=oggi?"liq":"att"));
-    /* margine effettivo: quello della pratica con la provvigione vera (come la colonna in tabella) */
-    const margine=!recesso&&m.okReale?m.eurReale:null;
-    return {p,c,m,pv,recesso,definita,venduto:+p.importoVendita||0,provv,addebito,netto:definita?Math.max(0,provv-addebito):0,liqDal,stato,margine};
-  });
+  return comp.filter(({p,c})=>c.fase&&p.consulente&&normNome(p.consulente)===normNome(nome)).map(x=>rigaProvv(x,oggi));
+}
+/* una pratica vista dal lato provvigioni: stato della liquidazione, provvigione, addebiti, margine */
+function rigaProvv({p,c},oggi){
+  const m=c.margine||{},pv=m.provv||{};
+  const recesso=c.fase==="RECESSO";
+  const definita=!recesso&&pv.pct!==null&&pv.pct!==undefined;
+  const provv=definita?pv.eur:0;
+  const addebito=definita?(m.addebitoApplicato||0):0;
+  const liqDal=!recesso&&p.dataInstallazione?addDays(p.dataInstallazione,15):"";
+  const stato=recesso?"rec":(!p.dataInstallazione?"dai":(liqDal<=oggi?"liq":"att"));
+  /* margine effettivo: quello della pratica con la provvigione vera (come la colonna in tabella) */
+  const margine=!recesso&&m.okReale?m.eurReale:null;
+  return {p,c,m,pv,recesso,definita,venduto:+p.importoVendita||0,provv,addebito,netto:definita?Math.max(0,provv-addebito):0,liqDal,stato,margine};
 }
 function totaliProvv(rs){
   const t={n:0,v:0,nr:0,vr:0,nv:0,vv:0,ni:0,vi:0,prov:0,add:0,net:0,liq:0,att:0,dai:0,ndef:0,nval:0,mrg:0,mnet:0,nm:0,nmKo:0};
@@ -3414,6 +3416,110 @@ function SchedaProvv({nome,comp,onClose,openPose}){
     </div></div>);
 }
 
+/* ---------- estrazione Excel delle provvigioni da data a data, per tutti o per un consulente ----------
+   Il POSATO si legge sulla data di installazione, qualunque sia la data di vendita: è quello su cui
+   si liquidano le provvigioni. Venduto e recessi si leggono sulla data di vendita e restano in fogli
+   a parte. Stessi conti della scheda del consulente. */
+function EstrazioneProvv({db,comp}){
+  const oggi=today();
+  const [dal,setDal]=useState(oggi.slice(0,4)+"-01-01");
+  const [al,setAl]=useState(oggi);
+  const [chi,setChi]=useState("");   // "" = tutti i consulenti
+  const nomi=useMemo(()=>{const m={};db.consulenti.forEach(x=>{if(normNome(x.nome))m[normNome(x.nome)]=x.nome.trim();});return m;},[db]);
+  const elenco=useMemo(()=>[...new Set(Object.values(nomi))].sort((a,b)=>a.localeCompare(b)),[nomi]);
+  const tutte=useMemo(()=>{const o=today();return comp.filter(({p,c})=>c.fase&&normNome(p.consulente))
+    .map(x=>({...rigaProvv(x,o),cons:nomi[normNome(x.p.consulente)]||String(x.p.consulente).trim()}));},[comp,nomi]);
+  const mesi=useMemo(()=>[...new Set(tutte.flatMap(r=>[r.p.dataVendita,r.p.dataInstallazione]).filter(Boolean).map(d=>d.slice(0,7)))].sort().reverse(),[tutte]);
+  const anni=[...new Set(mesi.map(m=>m.slice(0,4)))];
+  const dentro=d=>!!d&&(!dal||d>=dal)&&(!al||d<=al);
+  const mie=chi?tutte.filter(r=>normNome(r.cons)===normNome(chi)):tutte;
+  const posate=mie.filter(r=>!r.recesso&&dentro(r.p.dataInstallazione));
+  const vendute=mie.filter(r=>!r.recesso&&dentro(r.p.dataVendita));
+  const recessi=mie.filter(r=>r.recesso&&dentro(r.p.dataVendita));
+  const tp=totaliProvv(posate);
+  const somma=rs=>rs.reduce((s,r)=>s+r.venduto,0);
+  const rapido=v=>{if(!v)return;if(v.length===4){setDal(v+"-01-01");setAl(v+"-12-31");}else{setDal(meseStart(v));setAl(meseEnd(v));}};
+  const periodo=(dal?"dal "+fmtD(dal):"dall'inizio")+" "+(al?"al "+fmtD(al):"a oggi");
+  const scarica=()=>{
+    const perCons=(a,b)=>a.cons.localeCompare(b.cons);
+    const mpct=x=>x!==null&&x!==undefined?xl1(x):"";
+    /* posato: una riga per pratica installata nel periodo */
+    const fPos=posate.slice().sort((a,b)=>perCons(a,b)||a.p.dataInstallazione.localeCompare(b.p.dataInstallazione)).map(r=>({
+      Consulente:r.cons,"N. contratto":r.p.nContratto||"",Cliente:r.c.cliente||"","Data vendita":r.p.dataVendita||"","Data installazione":r.p.dataInstallazione,
+      "Mese posa":meseLabel(r.p.dataInstallazione.slice(0,7)),"Venduto €":xl2(r.venduto),
+      "Prezzo codice €":r.m.prezzoNoto&&r.m.codiceTot>0?xl2(r.m.codiceTot):"","Sopra codice %":r.pv.markup!=null?xl1(r.pv.markup):"",
+      "Imponibile €":r.definita?xl2(r.pv.base):"","% provvigione":r.definita?r.pv.pct:"da definire","Provvigione €":r.definita?xl2(r.provv):"",
+      "Addebiti €":r.addebito?xl2(-r.addebito):"","Provvigione netta €":r.definita?xl2(r.netto):"","Liquidabile dal":r.liqDal,
+      "Liquidabile oggi":r.stato==="liq"?"Sì":"No","Margine effettivo €":r.margine!==null?xl2(r.margine):"","Margine %":r.margine!==null?mpct(r.m.pctReale):""}));
+    const totPos=fPos.length?xlTotale(fPos,"Totale"):null;
+    if(totPos){totPos["Prezzo codice €"]="";totPos["Margine %"]=mpct(tp.mpct);}
+    /* riepilogo per consulente */
+    const gruppi=[...new Set([...posate,...vendute,...recessi].map(r=>r.cons))].sort((a,b)=>a.localeCompare(b));
+    const fRiep=gruppi.map(k=>{const P=totaliProvv(posate.filter(r=>r.cons===k)),V=vendute.filter(r=>r.cons===k),R=recessi.filter(r=>r.cons===k);
+      return {Consulente:k,"Venduti (data vendita)":V.length,"Venduto €":xl2(somma(V)),"Recessi (data vendita)":R.length,"Recessi €":xl2(somma(R)),
+        "Posate (data posa)":P.nv,"Posato €":xl2(P.vv),"Provvigioni €":xl2(P.prov),"Addebiti €":P.add?xl2(-P.add):0,"Provvigioni nette €":xl2(P.net),
+        "di cui liquidabili oggi €":xl2(P.liq),"Posate con % da definire":P.ndef,"Margine effettivo €":P.nm?xl2(P.mrg):"","Margine %":mpct(P.mpct)};});
+    const totRiep=fRiep.length?{...xlTotale(fRiep,"Totale"),"Venduti (data vendita)":vendute.length,"Recessi (data vendita)":recessi.length,
+      "Posate (data posa)":tp.nv,"Posate con % da definire":tp.ndef,"Margine %":mpct(tp.mpct)}:null;
+    /* mese per mese: il venduto sul mese di vendita, il posato sul mese di posa */
+    const perMese=(conCons)=>{const g={};const di=(mese,cons)=>{const k=mese+"|"+(conCons?cons:"");return g[k]=g[k]||{mese,cons,V:[],R:[],P:[]};};
+      vendute.forEach(r=>di(r.p.dataVendita.slice(0,7),r.cons).V.push(r));
+      recessi.forEach(r=>di(r.p.dataVendita.slice(0,7),r.cons).R.push(r));
+      posate.forEach(r=>di(r.p.dataInstallazione.slice(0,7),r.cons).P.push(r));
+      return Object.values(g).sort((a,b)=>a.mese.localeCompare(b.mese)||(conCons?a.cons.localeCompare(b.cons):0)).map(x=>{const P=totaliProvv(x.P);
+        return {Mese:meseLabel(x.mese),...(conCons?{Consulente:x.cons}:{}),"Venduti (data vendita)":x.V.length,"Venduto €":xl2(somma(x.V)),
+          "Recessi (data vendita)":x.R.length,"Recessi €":xl2(somma(x.R)),"Posate (data posa)":P.nv,"Posato €":xl2(P.vv),
+          "Provvigioni nette €":xl2(P.net),"Margine effettivo €":P.nm?xl2(P.mrg):""};});};
+    const fMesi=perMese(false),fMesiCons=perMese(true);
+    const conti=t=>t?{...t,"Venduti (data vendita)":vendute.length,"Recessi (data vendita)":recessi.length,"Posate (data posa)":tp.nv}:null;
+    /* venduto e recessi del periodo, a parte */
+    const fVend=vendute.slice().sort((a,b)=>perCons(a,b)||a.p.dataVendita.localeCompare(b.p.dataVendita)).map(r=>({
+      Consulente:r.cons,"N. contratto":r.p.nContratto||"",Cliente:r.c.cliente||"","Data vendita":r.p.dataVendita,"Venduto €":xl2(r.venduto),
+      "Prezzo codice €":r.m.prezzoNoto&&r.m.codiceTot>0?xl2(r.m.codiceTot):"","Data installazione":r.p.dataInstallazione||"",
+      Stato:r.p.dataInstallazione?"Installata":"Da installare","Provvigione netta prevista €":r.definita?xl2(r.netto):""}));
+    const totVend=fVend.length?{...xlTotale(fVend,"Totale"),"Prezzo codice €":""}:null;
+    const fRec=recessi.slice().sort((a,b)=>perCons(a,b)||a.p.dataVendita.localeCompare(b.p.dataVendita)).map(r=>({
+      Consulente:r.cons,"N. contratto":r.p.nContratto||"",Cliente:r.c.cliente||"","Data vendita":r.p.dataVendita,"Importo €":xl2(r.venduto),Motivo:r.c.motivo||""}));
+    const info=XLSX.utils.aoa_to_sheet([["Estrazione provvigioni consulenti"],[],
+      ["Periodo",periodo],["Consulente",chi||"Tutti"],["Estratta il",fmtD(today())],[],
+      ["Posato","Pratiche INSTALLATE nel periodo, qualunque sia la data di vendita: è su queste che si liquidano le provvigioni."],
+      ["Venduto","Contratti FIRMATI nel periodo, senza i recessi (data di vendita)."],
+      ["Recessi","Contratti firmati nel periodo e poi andati in recesso: a parte, senza provvigione."],
+      ["Provvigione","Imponibile (venduto senza IVA) × % della fascia sopra il prezzo codice; gli addebiti confermati si scalano. Liquidabile 15 giorni dopo l'installazione."],
+      ["% da definire","Pratiche vendute sotto codice o senza prezzo codice: la provvigione non è conteggiata finché non la decidi."]]);
+    info["!cols"]=[{wch:16},{wch:110}];
+    const fogli=[["Riepilogo consulenti",xlFoglio(fRiep,"Nessun movimento nel periodo",totRiep)],
+      ["Posato da liquidare",xlFoglio(fPos,"Nessuna pratica installata nel periodo",totPos)],
+      ["Per mese",xlFoglio(fMesi,"Nessun movimento nel periodo",conti(fMesi.length?xlTotale(fMesi,"Totale"):null))]];
+    if(!chi)fogli.push(["Per mese e consulente",xlFoglio(fMesiCons,"Nessun movimento nel periodo",conti(fMesiCons.length?xlTotale(fMesiCons,"Totale"):null))]);
+    fogli.push(["Venduto",xlFoglio(fVend,"Nessun contratto venduto nel periodo",totVend)],
+      ["Recessi",xlFoglio(fRec,"Nessun recesso nel periodo",fRec.length?xlTotale(fRec,"Totale"):null)],["Come si legge",info]);
+    xlScarica("Provvigioni "+(chi||"consulenti")+" "+(dal||"inizio")+" "+(al||oggi),fogli);
+  };
+  return (<div className="card" style={{marginTop:16}}>
+    <h3>Estrazione Excel provvigioni <span className="hint">venduto, posato e recessi da data a data</span></h3>
+    <div className="bd">
+      <div className="filters" style={{marginBottom:10}}>
+        <label className="hint">dal <input type="date" value={dal} onChange={e=>setDal(e.target.value)}/></label>
+        <label className="hint">al <input type="date" value={al} onChange={e=>setAl(e.target.value)}/></label>
+        <select value="" onChange={e=>rapido(e.target.value)} title="Riempie le date con un mese o un anno intero">
+          <option value="">Periodo rapido…</option>
+          {anni.map(a=>(<option key={a} value={a}>Anno {a}</option>))}
+          {mesi.map(m=>(<option key={m} value={m}>{meseLabel(m)}</option>))}
+        </select>
+        <select value={chi} onChange={e=>setChi(e.target.value)}>
+          <option value="">Tutti i consulenti</option>
+          {elenco.map(n=>(<option key={n} value={n}>{n}</option>))}
+        </select>
+        <div style={{flex:1}}/>
+        <button className="btn" onClick={scarica}>⬇ Scarica Excel</button>
+      </div>
+      <div className="hint">{periodo}{chi?" · "+chi:" · tutti i consulenti"}: <b>{nPrat(tp.nv)} posate</b> per <b>{eur(tp.vv)}</b>, provvigioni nette <b>{eur(tp.net)}</b>{tp.ndef?" ("+tp.ndef+" con % da definire, non conteggiate)":""} · venduto {eur(somma(vendute))} ({nPrat(vendute.length)}) · recessi {eur(somma(recessi))} ({nPrat(recessi.length)}).</div>
+      <p className="hint" style={{marginTop:6,marginBottom:0}}>Il <b>posato</b> conta le pratiche <b>installate</b> nel periodo, anche se vendute prima: è su queste che si liquidano le provvigioni. <b>Venduto</b> e <b>recessi</b> contano i contratti firmati nel periodo e stanno in fogli a parte. Nel file: riepilogo per consulente, posato pratica per pratica, mese per mese, venduto e recessi.</p>
+    </div>
+  </div>);
+}
+
 function Consulenti({db,comp,up,flash,openPose}){
   const ro=useContext(SoloLettura);
   const [scheda,setScheda]=useState(null);   // consulente di cui si guarda il dettaglio provvigioni
@@ -3428,7 +3534,7 @@ function Consulenti({db,comp,up,flash,openPose}){
     items={db.consulenti}
     cols={[{k:"nome",l:"Consulente"},{k:"_det",l:"Dettaglio",render:i=>(<button className="btn gh sm" title="Venduto e provvigioni pratica per pratica" onClick={e=>{e.stopPropagation();setScheda(i.nome);}}>📊 Provvigioni</button>)},{k:"ruolo",l:"Ruolo",render:i=>(<span className="tag">{i.ruolo}</span>)},{l:"Regioni",k:"_reg",render:i=>(i.regioni||[]).join(", ")},{l:"Venduto",num:true,eur:true,k:"_v",render:i=>{const t=provvDi[i.nome]||{};return(<span>{eur(t.vv||0)}<span className="hint" style={{display:"block"}}>{nPrat(t.nv||0)}{t.nr?" su "+t.n+" contratti":""}</span></span>);}},{l:"Posato",num:true,eur:true,k:"_pos",render:i=>{const t=provvDi[i.nome]||{};return(<span>{eur(t.vi||0)}<span className="hint" style={{display:"block"}}>{nPrat(t.ni||0)}</span></span>);}},{l:"Recessi",num:true,k:"_r",render:i=>{const s=stat[i.nome]||{};return(<span>{s.nr||0}{(s.idea||s.ko)?<span style={{marginLeft:6}}>{s.idea?<span className="mot mot-idea" title="Cambio idea">{s.idea} idea</span>:null}{s.ko?<span className="mot mot-ko" title="KO finanziario" style={{marginLeft:3}}>{s.ko} KO</span>:null}</span>:null}{s.vr?<span className="hint" style={{display:"block"}}>{eur(s.vr)}</span>:null}</span>);}},{l:"Provvigioni €",num:true,eur:true,k:"_prov",render:i=>{const t=provvDi[i.nome]||{};return(<span>{eur(t.net||0)}{t.add>0?<span className="hint" style={{display:"block"}}>{eur(t.prov)} meno {eur(t.add)} di addebiti</span>:null}{t.liq>0?<span className="hint" style={{display:"block"}}>di cui {eur(t.liq)} liquidabili</span>:null}{t.nval>0?<span className="ex ex-sotto" style={{marginTop:3,display:"inline-block"}} title="addebiti proposti, non confermati">{t.nval} da valutare</span>:null}{t.ndef>0?<span className="pz pz-sotto" style={{marginTop:3,display:"inline-block"}} title="fascia da definire">{t.ndef} da definire</span>:null}</span>);}},{l:"Margine effettivo €",num:true,eur:true,k:"_mrg",render:i=>{const s=stat[i.nome]||{};return(<span>{s.nmR?eur(s.mrgR):<span className="hint">—</span>}<span className="hint" style={{display:"block"}}>stima {eur(s.mrg||0)}</span></span>);}},{l:"Margine effettivo %",num:true,k:"_mp",render:i=>{const s=stat[i.nome]||{};const v=pctROf(s);const vs=pctOf(s);return(<span>{v===null?<span className="hint">—</span>:<span className={"mrg mrg-"+(v>=16?"ok":v>=8?"warn":"bad")}>{v.toFixed(1)}%</span>}{vs===null?null:<span className="hint" style={{display:"block"}}>stima {vs.toFixed(1)}%</span>}{s.nm>s.nmR?<span className="hint" style={{display:"block"}}>{s.nm-s.nmR} senza provvigione</span>:null}</span>);}},{l:"Disciplina prezzo",k:"_dz",render:i=>{const s=stat[i.nome]||{};return(<span>{s.sotto?<span className="pz pz-sotto" title="vendite sotto il minimo">{s.sotto} sotto</span>:null}{s.pieno?<span className="pz pz-pieno" style={{marginLeft:3}} title="vendite a listino pieno o oltre">{s.pieno} pieno</span>:null}{!s.sotto&&!s.pieno?<span className="hint">—</span>:null}</span>);}}]}
     form={(e,s)=>(<div className="form">{Fi(e,s,"Consulente","nome")}{Fi(e,s,"Ruolo","ruolo","text",RUOLI)}<div className="fld"><label>Capo area riferimento</label><select value={e.capoArea||""} onChange={ev=>s("capoArea",ev.target.value)}><option value=""></option>{db.consulenti.filter(x=>x.ruolo==="Capo Area").map(x=>(<option key={x.id}>{x.nome}</option>))}</select></div>{Fi(e,s,"Telefono","tel")}{Fi(e,s,"Email","email")}<div className="fld full"><label>Regioni di competenza</label><RegionSelect value={e.regioni} onChange={v=>s("regioni",v)}/></div></div>)}
-    extra={<ProspettoProvv db={db} comp={comp}/>}
+    extra={<><EstrazioneProvv db={db} comp={comp}/><ProspettoProvv db={db} comp={comp}/></>}
     onSave={x=>{up(d=>{const i=d.consulenti.findIndex(c=>c.id===x.id);delete x.__new;if(i>=0)d.consulenti[i]=x;else d.consulenti.push(x);return d;});flash("Consulente salvato");}}
     onDel={id=>{const nome=(db.consulenti.find(i=>i.id===id)||{}).nome;const n=db.pose.filter(p=>p.consulente===nome).length;if(!confirm(n?("Questo consulente è usato in "+n+" pratiche. Eliminarlo lascerà quei riferimenti orfani. Eliminare comunque?"):"Eliminare il consulente «"+(nome||"")+"»?"))return false;up(d=>{d.consulenti=d.consulenti.filter(c=>c.id!==id);return d;});flash(msgElimina(ro,"Consulente"));return true;}}/>
     {scheda&&<SchedaProvv nome={scheda} comp={comp} openPose={openPose} onClose={()=>setScheda(null)}/>}</>);
