@@ -270,7 +270,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="21 ott 2026 · 21";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="22 ott 2026 · 22";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -1145,7 +1145,9 @@ function compute(p,db){
   const consigliato=consigliati[0]||"";        // primo suggerito dalla zona
   const effInst=p.installatore||"";               // installatore scelto (auto-compilato dalla zona)
   const climaList=[p.clima1,p.clima2,p.clima3,p.clima4].filter(Boolean);
-  const ambito=climaList.length?"Climatizzatore":(p.termico?"Termico":"");
+  /* il clima in omaggio non fa di una caldaia un climatizzatore: conta quello che si è venduto */
+  const climaVenduti=climaList.filter(cf=>!isOmaggio(cf));
+  const ambito=p.termico?(climaVenduti.length?"Clima + termico":"Termico"):(climaList.length?"Climatizzatore":"");
   /* Per gli extra conta il mondo vero dell'impianto: se c'è un prodotto termico sono
      extra da caldaia, anche quando in pratica c'è pure il Mono 9000 in omaggio. E se
      una voce non ha prezzo nel proprio mondo si usa quello dell'altro, segnalandolo. */
@@ -2222,7 +2224,7 @@ function Pose({comp,db,up,flash,openPose}){
         return(<tr key={p.id} onClick={()=>openPose(structuredClone(p))} style={{cursor:"pointer"}}>
           <td className="num hint" style={{fontWeight:700}}>{i+1}</td>
           <td><b>{p.nContratto||"—"}</b>{p.files&&p.files.length>0&&<span title={p.files.length+" allegati"} style={{marginLeft:5}}>📎{p.files.length}</span>}{isDoppio({p,c})&&<span className="dop" title="Stesso contratto, oppure stesso cliente con stesso importo e stessa data">doppione?</span>}</td><td>{c.cliente}</td><td>{c.comune?<><div>{c.comune}</div><div className="hint" style={{fontSize:10.5}}>{c.provincia}</div></>:c.provincia}</td>
-          <td className="hint">{prods.length?prods.map((x,i)=>(<span key={i} className={"tag "+(c.ambito==="Termico"?"warm":"")} style={{marginRight:4}}>{x}</span>)):"—"}</td>
+          <td className="hint">{prods.length?prods.map((x,i)=>(<span key={i} className={"tag "+(x===p.termico?"warm":"")} style={{marginRight:4}}>{x}</span>)):"—"}</td>
           <td>{p.consulente}</td><td>{c.effInst||<span className="miss">—</span>}</td>
           <td>{c.finestra?<span className={"win win-"+(c.finestraStato||"na")}>{c.finestra}</span>:<span className="hint">—</span>}{c.fuoriFinestra&&<div><span className="flag" style={{marginTop:3,display:"inline-block"}}>fuori periodo</span></div>}</td>
           <td className="num">{c.fase==="RECESSO"?<span className="hint">—</span>:(c.margine.ok?<><span className={"mrg mrg-"+c.margine.cls}>{c.margine.pct.toFixed(1)}%</span>{c.margine.posizione==="sotto"&&<div><span className="pz pz-sotto" style={{marginTop:3,display:"inline-block"}}>sotto minimo</span></div>}</>:<span className="mrg mrg-na" title={"Mancano: "+c.margine.mancano.join(", ")}>⚠ dati</span>)}</td>
