@@ -270,7 +270,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="22 ott 2026 · 23";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="22 ott 2026 · 24";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -318,7 +318,11 @@ const isOmaggioPosato=cf=>isOmaggio(cf)&&!/senza\s*install|non\s*install/i.test(
 const omCanon=cf=>!isOmaggio(cf)?cf:(isOmaggioPosato(cf)?OM_SI:OM_NO);
 const DEF_CLIMA=[["Mono 9",400],["Mono 12",400],["Mono 18",600],["Mono 24",600],["Dual 9+9",800],["Dual 9+12",800],["Dual 12+12",800],["Trial 9+9+9",1000],["Trial 9+9+12",1000],["Trial 12+12+12",1000],["Quadri 9+9+9+9",1200],["Quadri 9+9+9+12",1200],...DEF_COMBO,[OM_NO,0],[OM_SI,400]].map(([config,compenso])=>({config,compenso}));
 const DEF_TERM=[["Armonia 24","Caldaia",900],["Armonia 28","Caldaia",900],["Armonia 32","Caldaia",900],["Armonia Small 24","Caldaia",900],["Armonia Extra 24 Est.","Caldaia",900],["Armonia Extra 28 Est.","Caldaia",900],["Sinergia 24/6 (Ibrido)","Ibrido",1500],["Sinergia 28/9 (Ibrido)","Ibrido",1500],["Sinergia 34/12 (Ibrido)","Ibrido",1500],["Aquatech Murale 80 LT","Scaldacqua",600],["Aquatech Murale 120 LT","Scaldacqua",600],["Aquatech Basamento 200 LT","Scaldacqua",600],["Aquatech Basamento 300 LT","Scaldacqua",600],["Aquacare (addolcitore)","Acqua",500],["Bubble (frigogasatore)","Acqua",500],["Altro termico","—",0]].map(([prodotto,tipo,compenso])=>({prodotto,tipo,compenso}));
-const DEF_EXTRA=[["Sopralluogo",100,100],["Videoispezione canna fumaria",null,150],["Intubaggio canna fumaria (al m)",null,80],["Canna fumaria esterna (al m)",null,80],["Neutralizzatore acidità – filtro abbattitore condensa",null,80],["Pompa scarico condensa",100,150],["Modifiche per passaggio da caldaia a basamento a caldaia murale",null,500],["Valvola termostatica (cad.)",null,90],["Linea frigorifera extra oltre i 3 m inclusi (al m)",80,null],["Foro su muro in cemento armato, mattone pieno o laterizio oltre 40 cm",80,80],["Foro soletta",190,190],["Foro su muro in pietra / sasso",220,220],["Supplemento cappotto termico",120,120],["Noleggio ponteggio",300,300],["Piattaforma aerea fino al 3° piano",null,null],["Suolo pubblico",null,null],["Controllo remoto Wi-Fi",null,null],["Piattaforma aerea dal 4° al 6° piano",null,null],["Piattaforma aerea oltre il 7° piano",null,null],["Filtro TiO2 deodorante antibatterico",null,null],["Filtro Mite Clear anti-acaro",null,null],["Filtro composito ioni d’argento, catechina, mite clear",null,null]].map(([voce,clima,termico])=>({voce,clima,termico}));
+const DEF_EXTRA=[["Sopralluogo",100,100],["Videoispezione canna fumaria",null,150],["Intubaggio canna fumaria (al m)",null,80],["Canna fumaria esterna (al m)",null,80],["Neutralizzatore acidità – filtro abbattitore condensa",null,80],["Pompa scarico condensa",100,150],["Modifiche per passaggio da caldaia a basamento a caldaia murale",null,500],["Valvola termostatica (cad.)",null,90],["Linea frigorifera extra oltre i 3 m inclusi (al m)",80,null],["Foro su muro in cemento armato, mattone pieno o laterizio oltre 40 cm",80,80],["Foro soletta",190,190],["Foro su muro in pietra / sasso",220,220],["Supplemento cappotto termico",120,120],["Noleggio ponteggio",300,300],["Piattaforma aerea fino al 3° piano",null,null],["Suolo pubblico",null,null],["Controllo remoto Wi-Fi",null,null],["Piattaforma aerea dal 4° al 6° piano",null,null],["Piattaforma aerea oltre il 7° piano",null,null],["Filtro TiO2 deodorante antibatterico",null,null],["Filtro Mite Clear anti-acaro",null,null],["Filtro composito ioni d’argento, catechina, mite clear",null,null],["Contributo installazione Aquacare / Bubble",null,0]].map(([voce,clima,termico])=>({voce,clima,termico}));
+/* voci che si vendono al cliente ma non sono una lavorazione dell'installatore (la posa di
+   Aquacare e Bubble è già nel loro compenso): non stanno tra gli extra posati e non entrano
+   nel confronto venduto/posato */
+const SOLO_VENDITA=new Set(["Contributo installazione Aquacare / Bubble"]);
 /* PREZZI DI VENDITA degli extra: cosa paga il CLIENTE, IVA 10% INCLUSA. Non c'entrano
    con quello che paghiamo all'installatore (DEF_EXTRA, netto e in reverse charge).
    Quattro colonne perché il prezzo cambia sia col listino (Arquati / ARQUATIONE) sia
@@ -351,6 +355,7 @@ const DEF_EXTRA_VEND=()=>([
   ["Filtro TiO2 deodorante antibatterico",        20,   null, 26,   null],
   ["Filtro Mite Clear anti-acaro",     20,   null, 26,   null],
   ["Filtro composito ioni d’argento, catechina, mite clear",    25,   null, 32,   null],
+  ["Contributo installazione Aquacare / Bubble", null, 500, null, 650],   // listini rev. 04-26: Arquati 500, ONE 650
 ].map(([voce,arqC,arqT,oneC,oneT])=>({voce,arqC,arqT,oneC,oneT})));
 /* I tre passi del magazzino, in ordine: si prepara la composizione, la si brandizza,
    è pronta da far partire. "Imballato" non veniva mai usato e stava in mezzo ai piedi. */
@@ -604,7 +609,7 @@ function migrate(d){
       if(!d.tariffe.extra.some(x=>x.voce===t.voce))d.tariffe.extra.push({...t});
     });
     (d.tariffe.extra||[]).forEach(t=>{
-      if(!d.tariffe.extraVendita.some(x=>x.voce===t.voce))d.tariffe.extraVendita.push({voce:t.voce,arqC:null,arqT:null,oneC:null,oneT:null});
+      if(!d.tariffe.extraVendita.some(x=>x.voce===t.voce))d.tariffe.extraVendita.push(DEF_EXTRA_VEND().find(x=>x.voce===t.voce)||{voce:t.voce,arqC:null,arqT:null,oneC:null,oneT:null});
     });
   }
   /* le pose che usavano i vecchi nomi puntano alle voci nuove */
@@ -1335,7 +1340,7 @@ function compute(p,db){
      La tariffa di posa resta per sapere quanto costano a noi. Contano solo queste due
      schermate, mai la fattura dell'installatore. */
   const posaCompilata=slots.some(([v])=>!!v)||!!p.dataInstallazione;
-  const vociConf=!posaCompilata?[]:[...new Set([...venditaExtra.map(r=>r.voce),...slots.filter(([v])=>!!v).map(([v])=>v)])];
+  const vociConf=!posaCompilata?[]:[...new Set([...venditaExtra.map(r=>r.voce),...slots.filter(([v])=>!!v).map(([v])=>v)])].filter(v=>!SOLO_VENDITA.has(v));
   const confronto=vociConf.map(v=>{
     const qV=venditaExtra.filter(r=>r.voce===v).reduce((a,r)=>a+r.qta,0);
     const qI=slots.filter(([x])=>x===v).reduce((a,[,q])=>a+(Number(q)||1),0);
@@ -2523,7 +2528,7 @@ function PoseForm({p,db,onChange,onClose,onDelete,esiste}){
     return okN(a)?+a:(okN(b)?+b:null);};
   const Slot=(n)=>{const v=f["ex"+n]||"",q=Number(f["q"+n])||1,tp=tarPosa(v);
     return (<div className="slotrow3"><div className="fld"><label>Extra {n}</label>
-      <select value={v} onChange={e=>{const nv=e.target.value;setM({["ex"+n]:nv,["q"+n]:nv?(f["q"+n]||"1"):""});}}><option value=""></option>{extraOpts.map(o=>(<option key={o}>{o}</option>))}</select>
+      <select value={v} onChange={e=>{const nv=e.target.value;setM({["ex"+n]:nv,["q"+n]:nv?(f["q"+n]||"1"):""});}}><option value=""></option>{extraOpts.filter(o=>!SOLO_VENDITA.has(o)||o===v).map(o=>(<option key={o}>{o}</option>))}</select>
       {v&&<span className="hint">{tp!==null?(eur(tp)+" cad. a tariffa"):"nessuna tariffa di posa per questa voce"}</span>}</div>
     <div className="fld"><label>Q.tà</label><input type="number" min="1" step="1" inputMode="numeric" onKeyDown={soloTastiNumero} disabled={!v} value={v?(f["q"+n]||""):""} onChange={e=>set("q"+n,soloCifre(e.target.value))}/></div>
     <div className="fld"><label>Costo posa</label><input readOnly value={v?(tp!==null?eur(q*tp):"—"):""} style={{background:"#F7F9F6",textAlign:"right"}}/></div></div>);};
