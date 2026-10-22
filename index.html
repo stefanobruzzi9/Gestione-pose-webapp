@@ -270,7 +270,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="22 ott 2026 · 22";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="22 ott 2026 · 23";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -432,7 +432,7 @@ const PREZZI_TERM={
  "Aquatech Basamento 300 LT":[10100,12700,10500,13200,13200,16500,13700,17200],
  "Aquacare (addolcitore)":  [2478,3098,2478,3098,     3300,4200,3300,4200],
  "Bubble (frigogasatore)":  [5541,6926,5541,6926,     7300,9200,7300,9200]};
-/* costo materiali: solo clima, dal configuratore. Il termico va compilato. */
+/* costo materiali clima, dal configuratore (il termico è in MAT_TERM, qui sotto). */
 const MAT_CLIMA={"Mono 9":357.76,"Mono 12":387.44,"Mono 18":573.51,"Mono 24":807.58,
  "Dual 9+9":873.90,"Dual 9+12":873.90,"Dual 12+12":873.90,
  "Trial 9+9+9":1241.00,"Trial 9+9+12":1241.00,"Trial 12+12+12":1241.00,
@@ -447,6 +447,15 @@ const MAT_CLIMA={"Mono 9":357.76,"Mono 12":387.44,"Mono 18":573.51,"Mono 24":807
  "Combo Trial + Mono 9/12":1628.44,"Combo Trial + Mono 18/24":2048.58,"Combo Trial + Dual":2114.90,"Combo Trial + Trial":2482.00,
  "Combo Quadri + Mono 9/12":2160.81,"Combo Quadri + Mono 18/24":2580.95,"Combo Quadri + Dual":2647.27,
  "Combo Quadri + Trial":3014.37,"Combo Quadri + Quadri":3546.74};
+/* costo materie prime termico, dal file costi Arquati CALDAIE_LISTINO_ARQUATI_18.2026SB (ott 2026).
+   Caldaie: caldaia + kit fumi dove il file lo conta; ibridi: caldaia + pompa di calore + kit
+   idraulico PHTC + collaudo; scaldacqua: l'apparecchio. Posa e omaggio sono a parte, come nel clima.
+   Armonia = Play Bongioanni (VIP 24/28/32, Small 24 incasso, Extra 24/28 esterna); Sinergia = Kit
+   Play ibrido; Aquatech = ECO AW. Aquacare e Bubble: costo non ancora fornito. */
+const MAT_TERM={"Armonia 24":805,"Armonia 28":830,"Armonia 32":890,"Armonia Small 24":540,
+ "Armonia Extra 24 Est.":840,"Armonia Extra 28 Est.":880,
+ "Sinergia 24/6 (Ibrido)":3195,"Sinergia 28/9 (Ibrido)":3870,"Sinergia 34/12 (Ibrido)":4975,
+ "Aquatech Murale 80 LT":760,"Aquatech Murale 120 LT":800,"Aquatech Basamento 200 LT":1050,"Aquatech Basamento 300 LT":1250};
 const LISTINI=["Arquati","Arquati ONE"];
 /* Regimi IVA delle fatture installatori. In tutti i casi il COSTO è l'imponibile:
    l'IVA è detraibile, quindi neutra. Cambia solo quanto scorporare dal totale scritto in fattura. */
@@ -482,7 +491,7 @@ const DEF_COSTI=()=>({
   sogliaOk:16,
   sogliaAllerta:8,
   clima:Object.keys(PREZZI_CLIMA).map(config=>({config,materiali:MAT_CLIMA[config]||"",...mkRow(PREZZI_CLIMA[config])})),
-  termico:Object.keys(PREZZI_TERM).map(prodotto=>({prodotto,materiali:"",...mkRow(PREZZI_TERM[prodotto])}))
+  termico:Object.keys(PREZZI_TERM).map(prodotto=>({prodotto,materiali:MAT_TERM[prodotto]??"",...mkRow(PREZZI_TERM[prodotto])}))
 });
 /* descrizione breve dello stato incasso, per i tooltip dei semafori */
 const finStatoDesc=p=>{
@@ -683,6 +692,9 @@ function migrate(d){
         return old&&old.materiali!==""&&old.materiali!==undefined?{...n,materiali:old.materiali}:n;
       });
     }
+    /* ott 2026: costi delle materie prime termico. Si riempiono solo dove sono ancora vuoti:
+       una cifra già messa a mano non si tocca. */
+    (d.costi.termico||[]).forEach(x=>{if((x.materiali===""||x.materiali==null)&&MAT_TERM[x.prodotto]!=null)x.materiali=MAT_TERM[x.prodotto];});
   }
   /* anche nella tabella costi: rinomina le righe omaggio storiche e togli i doppioni */
   if(Array.isArray(d.costi.clima)){
