@@ -270,7 +270,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="29 ott 2026 · 25";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="29 ott 2026 · 26";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -944,6 +944,9 @@ const ETICHETTE={nContratto:"N. contratto",clienteId:"Cliente",consulente:"Consu
   clima3:"Clima 3",clima4:"Clima 4",termico:"Prodotto termico",modalitaConsegna:"Modalità consegna",dataConsegna:"Data consegna",preparazione:"Merce pronta",okPosa:"Via libera alla posa",okPosaData:"Data via libera",
   finestraDa:"Finestra dal",finestraA:"Finestra al",dataPrevista:"Data posa prevista",dataInstallazione:"Data installazione",altriExtra:"Altri extra €",
   saldato:"Saldo incassato",recesso:"Recesso",motivoRecesso:"Motivo recesso",fatturaInst:"Fattura installatore €",fatturaImponibile:"Imponibile fattura €",
+  fatturaRegime:"Regime IVA fattura",fatturaNum:"N. fattura installatore",fatturaData:"Data fattura installatore",fatturaVoci:"Righe della fattura",
+  fatturaPagamento:"Pagamento fattura",fatturaScadenza:"Scadenza fattura",fatturaPagata:"Fattura pagata il",extraAutorizzati:"Extra fuori contratto autorizzati",
+  provvPctManuale:"% provvigione a mano",addebitoEur:"Addebito €",
   addebitoStato:"Esito verifica extra",contattoPersonale:"Origine del contatto",note:"Note",noteInst:"Note per l'installatore",nome:"Nome",
   referente:"Referente",piva:"CF / P.IVA",tel:"Telefono",email:"Email",pec:"PEC",indirizzo:"Indirizzo",comune:"Comune",cap:"CAP",provincia:"Provincia",
   regioni:"Regioni",ruolo:"Ruolo",capoArea:"Capo area"};
@@ -2267,7 +2270,7 @@ function Agenda({comp,openPose}){
 }
 
 /* ---------- POSE ---------- */
-const emptyPose=()=>({id:uid(),nContratto:"",clienteId:"",consulente:"",dataApp:"",clima1:"",clima2:"",clima3:"",clima4:"",termico:"",importoVendita:"",listino:"",extraPrezzoCliente:"",vex1:"",vq1:"",vp1:"",vex2:"",vq2:"",vp2:"",vex3:"",vq3:"",vp3:"",vex4:"",vq4:"",vp4:"",vex5:"",vq5:"",vp5:"",contattoPersonale:"",provvPctManuale:"",provvNota:"",omaggioSu:"",pagamento:"",finStato:"",finData:"",finNote:"",caparraEur:"",finanziatoEur:"",finRate:"",saldoData:"",okPosa:"",okPosaData:"",addebitoStato:"",addebitoEur:"",fatturaInst:"",fatturaRegime:"",fatturaImponibile:"",fattFiles:[],fatturaNum:"",fatturaData:"",fatturaVoci:"",extraMateriali:"",installatore:"",dataVendita:"",recesso:"",motivoRecesso:"",preparazione:"",modalitaConsegna:"",dataConsegna:"",finestraTipo:"",finestraDa:"",finestraA:"",dataPrevista:"",dataInstallazione:"",ex1:"",q1:"",ex2:"",q2:"",ex3:"",q3:"",ex4:"",q4:"",ex5:"",q5:"",altriExtra:"",saldato:"",note:"",noteInst:"",link:""});
+const emptyPose=()=>({id:uid(),nContratto:"",clienteId:"",consulente:"",dataApp:"",clima1:"",clima2:"",clima3:"",clima4:"",termico:"",importoVendita:"",listino:"",extraPrezzoCliente:"",vex1:"",vq1:"",vp1:"",vex2:"",vq2:"",vp2:"",vex3:"",vq3:"",vp3:"",vex4:"",vq4:"",vp4:"",vex5:"",vq5:"",vp5:"",contattoPersonale:"",provvPctManuale:"",provvNota:"",omaggioSu:"",pagamento:"",finStato:"",finData:"",finNote:"",caparraEur:"",finanziatoEur:"",finRate:"",saldoData:"",okPosa:"",okPosaData:"",addebitoStato:"",addebitoEur:"",fatturaInst:"",fatturaRegime:"",fatturaImponibile:"",fattFiles:[],fatturaNum:"",fatturaData:"",fatturaVoci:"",fatturaPagamento:"",fatturaScadenza:"",fatturaPagata:"",extraAutorizzati:"",extraMateriali:"",installatore:"",dataVendita:"",recesso:"",motivoRecesso:"",preparazione:"",modalitaConsegna:"",dataConsegna:"",finestraTipo:"",finestraDa:"",finestraA:"",dataPrevista:"",dataInstallazione:"",ex1:"",q1:"",ex2:"",q2:"",ex3:"",q3:"",ex4:"",q4:"",ex5:"",q5:"",altriExtra:"",saldato:"",note:"",noteInst:"",link:""});
 function Pose({comp,db,up,flash,openPose}){
   const ro=useContext(SoloLettura);
   const [q,setQ]=useState("");const [ff,setFf]=useState("");const [fi,setFi]=useState("");const [fm,setFm]=useState("");
@@ -2964,9 +2967,27 @@ function PoseForm({p,db,onChange,onClose,onDelete,esiste}){
             placeholder={c.margine.fattLordo!==null?("calcolato → "+eur(c.margine.fattura)):"—"}/>
           <span className="hint">Per fatture con aliquote miste. Se compilato prevale su tutto.</span>
         </div>}
-        {(f.fatturaNum||f.fatturaData)&&<div className="fld"><label>Riferimenti fattura</label>
-          <input value={[f.fatturaNum&&("n. "+f.fatturaNum),f.fatturaData&&fmtD(f.fatturaData)].filter(Boolean).join(" · ")} readOnly style={{background:"#F7F9F6"}}/>
-        </div>}
+        {(c.margine.fattLordo!==null||f.fatturaNum||f.fatturaData)&&<>
+          <div className="fld"><label>N. fattura</label><input value={f.fatturaNum||""} onChange={e=>set("fatturaNum",e.target.value)} placeholder="es. 000244-2026"/></div>
+          <div className="fld"><label>Data fattura</label><input type="date" value={f.fatturaData||""} onChange={e=>set("fatturaData",e.target.value)}/></div>
+          <div className="fld"><label>Pagamento</label>
+            <select value={f.fatturaPagamento||""} onChange={e=>set("fatturaPagamento",e.target.value)}>
+              <option value="">—</option>{PAG_INST.map(x=>(<option key={x}>{x}</option>))}
+            </select></div>
+          <div className="fld"><label>Scadenza</label><input type="date" value={f.fatturaScadenza||""} onChange={e=>set("fatturaScadenza",e.target.value)}/>
+            {!f.fatturaPagata&&f.fatturaScadenza&&f.fatturaScadenza<today()&&<span className="hint" style={{color:"var(--accent)",fontWeight:600}}>Scaduta e non ancora segnata come pagata.</span>}</div>
+          <div className="fld"><label>Pagata il</label><input type="date" value={f.fatturaPagata||""} onChange={e=>set("fatturaPagata",e.target.value)}/>
+            <span className="hint">Da compilare quando l'amministrazione l'ha pagata: esce dai pagamenti da fare.</span></div>
+        </>}
+        {(()=>{const rf=c.margine.fattLordo!==null?rigaFattInst({p:f,c},db):null;if(!rf||rf.fuori<0.5)return null;return (
+          <div className="fld full" style={{background:"#FFF7F5",border:"1px solid #E9B3A4",borderRadius:10,padding:"10px 12px"}}>
+            <b style={{fontSize:12.5,color:"#A93A1B"}}>In fattura ci sono {eur(rf.fuori)} di extra oltre quelli del contratto</b>
+            <p className="hint" style={{margin:"5px 0 8px"}}>Extra fatturati {eur(rf.extraF)}, a contratto {eur(rf.previsti)}.{rf.sopra!==null&&<> Il prezzo di vendita è {rf.sopra>=0?"sopra":"sotto"} il codice di {eur(Math.abs(rf.sopra))} (IVA esclusa){rf.sopra>0?(rf.sopra>=rf.fuori?": basta a coprirli.":": li copre in parte."):": non li copre."}</>}</p>
+            <div className="fld" style={{maxWidth:320}}><label>Extra fuori contratto</label>
+              <select value={f.extraAutorizzati||""} onChange={e=>set("extraAutorizzati",e.target.value)}>
+                <option value="">Da verificare</option><option value="Sì">Autorizzati: si pagano</option><option value="No">Non autorizzati: non si pagano</option>
+              </select></div>
+          </div>);})()}
         {(c.margine.extraCliente>0||c.margine.fattura!==null)&&
         <div className="fld full" style={{background:"#F7F9F6",border:"1px solid var(--line)",borderRadius:10,padding:"10px 12px"}}>
           <div className="costrow"><span>Extra incassati dal cliente</span><span>{eur(c.margine.extraCliente)}</span></div>
@@ -3266,11 +3287,169 @@ function Clienti({db,comp,up,flash}){
     onSave={x=>{up(d=>{const i=d.clienti.findIndex(c=>c.id===x.id);delete x.__new;if(i>=0)d.clienti[i]=x;else d.clienti.push(x);return d;});flash("Cliente salvato");}}
     onDel={elimina}/>;
 }
+/* ---------- PAGAMENTI INSTALLATORI ----------
+   Le fatture registrate sulle pratiche, controllate come nel prospetto che va
+   all'amministrazione: posa da tariffario, extra a contratto, extra fuori contratto
+   (autorizzati o no) e quanto li paga il prezzo di vendita sopra il codice. Una fattura
+   cumulativa sta su più pratiche con lo stesso numero: ognuna porta la sua quota. */
+const PAG_INST=["RiBa","Bonifico"];
+const numFattura=s=>String(s||"").replace(/\s*\(.*\)\s*$/,"").trim();
+function rigaFattInst({p,c},db){
+  const m=c.margine,lordo=m.fattLordo||0,imp=m.fattura||0,posa=c.compensoStd;
+  const extraF=Math.max(0,imp-posa);
+  /* extra che l'installatore può fatturare: quelli venduti a contratto, alla sua tariffa,
+     più gli «altri extra» concordati scritti in pratica */
+  const previsti=(m.venditaExtra||[]).reduce((s,r)=>s+(r.costoPosa||0),0)+(+p.altriExtra||0);
+  const fuori=Math.max(0,extraF-previsti);
+  const conFuori=fuori>=0.5;
+  const aut=conFuori&&p.extraAutorizzati==="Sì";
+  const sopra=m.prezzoNoto&&m.codiceTot>0?((+p.importoVendita||0)-m.codiceTot)/(1+(+db.costi.ivaPct||10)/100):null;
+  const coperti=aut&&sopra!==null?Math.min(fuori,Math.max(0,sopra)):0;
+  const sottoPosa=imp<posa-0.5;
+  const esito=sottoPosa?"DA VERIFICARE: fattura sotto la posa da tariffario"
+    :!conFuori?"OK":aut?"OK: extra fuori contratto autorizzati"
+    :p.extraAutorizzati==="No"?"NON AUTORIZZATI: extra fuori contratto":"DA VERIFICARE: extra fuori contratto";
+  /* gli extra fuori contratto non autorizzati non si pagano (IVA compresa dove c'è) */
+  const pagabile=conFuori&&!aut?Math.max(0,lordo-fuori*(1+(m.aliq||0)/100)):lordo;
+  return {p,c,inst:(c.effInst||p.installatore||"").trim(),num:numFattura(p.fatturaNum),data:p.fatturaData||"",
+    pagamento:p.fatturaPagamento||"",scadenza:p.fatturaScadenza||"",pagata:p.fatturaPagata||"",
+    lordo,imp,posa,extraF,previsti:Math.min(previsti,extraF),fuori:conFuori?fuori:0,aut,coperti,sopra,sottoPosa,pagabile,esito,regime:m.regime};
+}
+/* una riga per fattura: le pratiche con lo stesso installatore, numero e data */
+function fattureInst(righe){
+  const g={};righe.forEach(r=>{const k=normNome(r.inst)+"|"+(r.num||"?"+r.p.id)+"|"+r.data;(g[k]=g[k]||[]).push(r);});
+  const peso=e=>e.startsWith("NON")?3:e.startsWith("DA VERIFICARE")?2:e==="OK"?0:1;
+  return Object.values(g).map(rs=>{const t=k=>rs.reduce((s,r)=>s+r[k],0),pr=k=>(rs.find(r=>r[k])||{})[k]||"";
+    return {inst:rs[0].inst,num:rs[0].num,data:rs[0].data,pagamento:pr("pagamento"),scadenza:pr("scadenza"),
+      pagata:rs.every(r=>r.pagata)?rs.map(r=>r.pagata).sort().pop():"",righe:rs,lordo:t("lordo"),pagabile:t("pagabile"),fuori:t("fuori"),
+      esito:rs.map(r=>r.esito).sort((a,b)=>peso(b)-peso(a))[0]};})
+    .sort((a,b)=>a.inst.localeCompare(b.inst)||(a.data||"").localeCompare(b.data||"")||a.num.localeCompare(b.num,undefined,{numeric:true}));
+}
+function PagamentiInstallatori({db,comp,up}){
+  const ro=useContext(SoloLettura);
+  const oggi=today();
+  const [mese,setMese]=useState(oggi.slice(0,7));
+  const [chi,setChi]=useState("");   // "" = tutti gli installatori
+  const fine=meseEnd(mese);
+  const tutte=useMemo(()=>comp.filter(({c})=>c.margine.fattLordo!==null).map(x=>rigaFattInst(x,db)),[comp,db]);
+  const mesi=useMemo(()=>{const s=new Set([oggi.slice(0,7)]);tutte.forEach(r=>{[r.scadenza,r.pagata,r.data].forEach(d=>{if(d)s.add(d.slice(0,7));});});return [...s].sort().reverse();},[tutte,oggi]);
+  const elenco=useMemo(()=>[...new Set(comp.map(({c})=>(c.effInst||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b)),[comp]);
+  const mia=r=>!chi||normNome(r.inst)===normNome(chi);
+  const fatt=fattureInst(tutte.filter(mia));
+  const daPagare=fatt.filter(f=>!f.pagata&&(!f.scadenza||f.scadenza<=fine));
+  const dopo=fatt.filter(f=>!f.pagata&&f.scadenza&&f.scadenza>fine);
+  const pagate=fatt.filter(f=>f.pagata&&f.pagata.slice(0,7)===mese);
+  /* fatture da ricevere: pratiche installate entro fine mese senza fattura */
+  const daRicevere=comp.filter(({p,c})=>p.dataInstallazione&&p.dataInstallazione<=fine&&c.fase!=="RECESSO"&&c.margine.fattLordo===null&&(c.effInst||"").trim()&&(!chi||normNome(c.effInst)===normNome(chi)))
+    .sort((a,b)=>a.c.effInst.localeCompare(b.c.effInst)||a.p.dataInstallazione.localeCompare(b.p.dataInstallazione));
+  const somma=(xs,k)=>xs.reduce((s,x)=>s+x[k],0);
+  const scadute=daPagare.filter(f=>f.scadenza&&f.scadenza<oggi);
+  const autTutte=daPagare.flatMap(f=>f.righe).filter(r=>r.aut);
+  const daVer=daPagare.flatMap(f=>f.righe).filter(r=>r.fuori>0&&!r.aut);
+  const attesoDi=({c})=>c.compensoStd+c.extraTot;
+  const quando=f=>!f.scadenza?"senza scadenza":f.scadenza<oggi?"scaduta il "+fmtD(f.scadenza):"entro il "+fmtD(f.scadenza);
+  const segnaPagate=(fs,data)=>{
+    if(ro||!fs.length)return;
+    if(!confirm("Segnare come pagate "+fs.length+(fs.length===1?" fattura":" fatture")+" ("+eur(somma(fs,"pagabile"))+") con data "+fmtD(data)+"?"))return;
+    const ids=new Set(fs.flatMap(f=>f.righe.map(r=>r.p.id)));
+    up(d=>{d.pose.forEach(p=>{if(ids.has(p.id))p.fatturaPagata=data;});return d;});
+  };
+  const sintesi=()=>{const g={};daPagare.forEach(f=>{(g[f.inst]=g[f.inst]||[]).push(f);});
+    return Object.keys(g).sort((a,b)=>a.localeCompare(b)).map(k=>{const fs=g[k],rs=fs.flatMap(f=>f.righe);
+      return {inst:k,fs,rs,pag:[...new Set(fs.map(f=>f.pagamento).filter(Boolean))].join(", ")||"—",
+        scad:[...new Set(fs.map(f=>f.scadenza).filter(Boolean))].sort().map(fmtD).join(", ")||"—",
+        lordo:somma(fs,"lordo"),posa:somma(rs,"posa"),previsti:somma(rs,"previsti"),aut:rs.filter(r=>r.aut).reduce((s,r)=>s+r.fuori,0),
+        coperti:somma(rs,"coperti"),noaut:rs.filter(r=>!r.aut).reduce((s,r)=>s+r.fuori,0),pagabile:somma(fs,"pagabile"),
+        ora:fs.filter(f=>!f.scadenza||f.scadenza<=fine).reduce((s,f)=>s+f.pagabile,0),scad:fs.filter(f=>f.scadenza&&f.scadenza<oggi).length};});};
+  const titolo="Pagamenti installatori "+meseLabel(mese)+(chi?" · "+chi:"");
+  const scarica=()=>{
+    const S=sintesi();
+    const fS=S.map(x=>({Installatore:x.inst,Pagamento:x.pag,Scadenze:x.scad,Fatture:x.fs.length,Pratiche:x.rs.length,"Importo fatture €":xl2(x.lordo),
+      "Posa standard €":xl2(x.posa),"Extra a contratto €":xl2(x.previsti),"Extra fuori contratto autorizzati €":xl2(x.aut),"di cui coperti dal prezzo sopra codice €":xl2(x.coperti),
+      "Extra fuori contratto da verificare / non autorizzati €":xl2(x.noaut),"Da pagare €":xl2(x.pagabile),"Fatture scadute":x.scad}));
+    const fP=daPagare.map(f=>({Installatore:f.inst,"N. fattura":f.num,"Data fattura":f.data,Pagamento:f.pagamento,Scadenza:f.scadenza,Quando:quando(f),
+      Clienti:f.righe.map(r=>r.c.cliente).join(", "),"Importo fattura €":xl2(f.lordo),"Da pagare €":xl2(f.pagabile),Esito:f.esito}));
+    const riga=r=>({Installatore:r.inst,"N. fattura":r.num,"Data fattura":r.data,Cliente:r.c.cliente,"N. contratto":r.p.nContratto||"",Consulente:r.p.consulente||"",
+      Impianto:r.c.climaList.concat(r.p.termico?[r.p.termico]:[]).join(" + "),"Installata il":r.p.dataInstallazione||"","Posa da tariffario €":xl2(r.posa),
+      "Extra fatturati €":xl2(r.extraF),"Extra a contratto €":xl2(r.previsti),"Extra fuori contratto €":xl2(r.fuori),
+      "Fuori contratto":r.fuori>0?(r.aut?"autorizzati":r.p.extraAutorizzati==="No"?"non autorizzati":"da verificare"):"",
+      "Prezzo vendita €":xl2(+r.p.importoVendita||0),"Prezzo codice €":r.c.margine.codiceTot>0?xl2(r.c.margine.codiceTot):"",
+      "Sopra codice € (IVA escl.)":r.sopra!==null?xl2(r.sopra):"","Coperti dal prezzo €":r.fuori>0&&r.aut?xl2(r.coperti):"",
+      "Imponibile €":xl2(r.imp),"Regime IVA":r.regime,"Importo fattura €":xl2(r.lordo),"Da pagare €":xl2(r.pagabile),Esito:r.esito});
+    const fR=daPagare.flatMap(f=>f.righe).map(riga);
+    const fX=daPagare.flatMap(f=>f.righe).filter(r=>r.fuori>0).map(riga);
+    const fD=daRicevere.map(({p,c})=>({Installatore:c.effInst,"N. contratto":p.nContratto||"",Cliente:c.cliente,Comune:c.comune,Impianto:c.climaList.concat(p.termico?[p.termico]:[]).join(" + "),
+      "Installata il":p.dataInstallazione,Stato:p.dataInstallazione.slice(0,7)===mese?"posa del mese":"fattura da ricevere",
+      "Posa attesa €":xl2(c.compensoStd),"Extra segnati dall'installatore €":xl2(c.extraTot),"Imponibile atteso €":xl2(attesoDi({p,c}))}));
+    const fG=dopo.map(f=>({Installatore:f.inst,"N. fattura":f.num,"Data fattura":f.data,Pagamento:f.pagamento,Scadenza:f.scadenza,Clienti:f.righe.map(r=>r.c.cliente).join(", "),"Importo fattura €":xl2(f.lordo),"Da pagare €":xl2(f.pagabile),Esito:f.esito}));
+    const fPg=pagate.map(f=>({Installatore:f.inst,"N. fattura":f.num,"Data fattura":f.data,Pagamento:f.pagamento,"Pagata il":f.pagata,Clienti:f.righe.map(r=>r.c.cliente).join(", "),"Importo fattura €":xl2(f.lordo)}));
+    const info=XLSX.utils.aoa_to_sheet([[titolo],[],["Estratto il",fmtD(oggi)],["Installatore",chi||"Tutti"],[],
+      ["Da pagare","Fatture registrate sulle pratiche, non ancora pagate, con scadenza entro il "+fmtD(fine)+" (comprese le scadute e quelle senza scadenza)."],
+      ["Posa standard","Compenso dell'installatore da tariffario per l'impianto venduto."],
+      ["Extra a contratto","Extra venduti al cliente e scritti nel contratto, alla tariffa dell'installatore, più gli «altri extra» concordati scritti in pratica."],
+      ["Extra fuori contratto","Extra fatturati oltre quelli del contratto. Si pagano solo se autorizzati (campo «Extra fuori contratto» nella pratica); altrimenti si tolgono dal pagabile."],
+      ["Coperti dal prezzo","Il consulente non aveva separato gli extra dal prezzo: la parte del prezzo di vendita sopra il codice (IVA esclusa) li paga, del tutto o in parte. Il codice è quello del listino in vigore il giorno della vendita."],
+      ["Da ricevere","Pratiche installate entro fine mese senza fattura dell'installatore: importi attesi, solo per previsione."]]);
+    info["!cols"]=[{wch:22},{wch:120}];
+    const tot=(rs,et)=>rs.length?xlTotale(rs,et):null;
+    xlScarica(titolo,[["Sintesi per installatore",xlFoglio(fS,"Nessuna fattura da pagare",tot(fS,"Totale"))],
+      ["Da pagare",xlFoglio(fP,"Nessuna fattura da pagare",tot(fP,"Totale"))],["Fatture e pratiche",xlFoglio(fR,"Nessuna fattura da pagare",tot(fR,"Totale"))],
+      ["Extra fuori contratto",xlFoglio(fX,"Nessun extra fuori contratto",tot(fX,"Totale"))],["Scadenza successiva",xlFoglio(fG,"Nessuna",tot(fG,"Totale"))],
+      ["Pagate nel mese",xlFoglio(fPg,"Nessuna fattura segnata pagata nel mese",tot(fPg,"Totale"))],["Fatture da ricevere",xlFoglio(fD,"Nessuna",tot(fD,"Totale"))],["Come si legge",info]]);
+  };
+  const stampa=()=>{
+    const S=sintesi();const e=v=>eur2(v);
+    const tS='<table><thead><tr><th>Installatore</th><th>Pagamento</th><th class="num">Fatture</th><th class="num">Importo fatture</th><th class="num">Extra fuori contratto autorizzati</th><th class="num">di cui coperti dal prezzo</th><th class="num">Da verificare</th><th class="num">Da pagare</th></tr></thead><tbody>'
+      +S.map(x=>'<tr><td>'+x.inst+'</td><td>'+x.pag+'</td><td class="num">'+x.fs.length+'</td><td class="num">'+e(x.lordo)+'</td><td class="num">'+(x.aut?e(x.aut):"—")+'</td><td class="num">'+(x.aut?e(x.coperti):"—")+'</td><td class="num">'+(x.noaut?e(x.noaut):"—")+'</td><td class="num"><b>'+e(x.pagabile)+'</b></td></tr>').join("")
+      +'<tr><th colspan="3">Totale</th><th class="num">'+e(somma(S,"lordo"))+'</th><th class="num">'+e(somma(S,"aut"))+'</th><th class="num">'+e(somma(S,"coperti"))+'</th><th class="num">'+e(somma(S,"noaut"))+'</th><th class="num">'+e(somma(S,"pagabile"))+'</th></tr></tbody></table>';
+    const tP='<table><thead><tr><th>Installatore</th><th>Fattura</th><th>Pagamento</th><th>Scadenza</th><th>Clienti</th><th class="num">Importo</th><th class="num">Da pagare</th><th>Esito</th></tr></thead><tbody>'
+      +daPagare.map(f=>'<tr><td>'+f.inst+'</td><td>n. '+f.num+(f.data?' del '+fmtD(f.data):'')+'</td><td>'+(f.pagamento||"—")+'</td><td>'+quando(f)+'</td><td>'+f.righe.map(r=>r.c.cliente).join(", ")+'</td><td class="num">'+e(f.lordo)+'</td><td class="num"><b>'+e(f.pagabile)+'</b></td><td>'+f.esito+'</td></tr>').join("")+'</tbody></table>';
+    const xs=daPagare.flatMap(f=>f.righe).filter(r=>r.fuori>0);
+    const tX=xs.length?'<div class="sec">Extra fuori contratto</div><p>Extra fatturati oltre quelli scritti nel contratto. Il consulente non li aveva separati dal prezzo: dove il prezzo di vendita era sopra il prezzo codice (listino in vigore il giorno della vendita, IVA esclusa), la differenza li paga, del tutto o in parte.</p><table><thead><tr><th>Cliente</th><th>Consulente</th><th>Fattura</th><th class="num">Extra fuori contratto</th><th>Stato</th><th class="num">Sopra codice</th><th class="num">Coperti dal prezzo</th></tr></thead><tbody>'
+      +xs.map(r=>'<tr><td>'+r.c.cliente+'</td><td>'+(r.p.consulente||"")+'</td><td>'+r.inst+' n. '+r.num+'</td><td class="num">'+e(r.fuori)+'</td><td>'+(r.aut?"autorizzati":r.p.extraAutorizzati==="No"?"non autorizzati":"da verificare")+'</td><td class="num">'+(r.sopra===null?"—":e(r.sopra))+'</td><td class="num">'+(r.aut?e(r.coperti):"—")+'</td></tr>').join("")+'</tbody></table>':'';
+    const tD=daRicevere.length?'<div class="sec">Fatture da ricevere (previsione)</div><table><thead><tr><th>Installatore</th><th>Cliente</th><th>Installata il</th><th class="num">Imponibile atteso</th></tr></thead><tbody>'
+      +daRicevere.map(x=>'<tr><td>'+x.c.effInst+'</td><td>'+x.c.cliente+'</td><td>'+fmtD(x.p.dataInstallazione)+'</td><td class="num">'+e(attesoDi(x))+'</td></tr>').join("")
+      +'<tr><th colspan="3">Totale</th><th class="num">'+e(daRicevere.reduce((s,x)=>s+attesoDi(x),0))+'</th></tr></tbody></table>':'';
+    printHTML(titolo,'<style>td.num,th.num{white-space:nowrap}</style><p>Fatture installatori da pagare entro il <b>'+fmtD(fine)+'</b>, comprese le scadute non ancora pagate. Ogni fattura è confrontata con il tariffario e con il contratto del cliente.</p>'
+      +'<div class="sec">Sintesi per installatore</div>'+tS+'<div class="sec">Fatture da pagare</div>'+tP+tX+tD);
+  };
+  return (<div className="card" style={{marginTop:16}}>
+    <h3>Pagamenti installatori <span className="tag">stampa ed Excel per l'amministrazione</span></h3>
+    <div className="bd">
+      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
+        <select value={mese} onChange={e=>setMese(e.target.value)}>{mesi.map(x=>(<option key={x} value={x}>{meseLabel(x)}</option>))}</select>
+        <select value={chi} onChange={e=>setChi(e.target.value)}><option value="">Tutti gli installatori</option>{elenco.map(x=>(<option key={x}>{x}</option>))}</select>
+        <button className="btn" onClick={scarica}>⤓ Scarica Excel</button>
+        <button className="btn gh" onClick={stampa}>🖨 Stampa</button>
+      </div>
+      <div className="hint">Da pagare entro il <b>{fmtD(fine)}</b>: <b>{daPagare.length}</b> {daPagare.length===1?"fattura":"fatture"} per <b>{eur2(somma(daPagare,"pagabile"))}</b>
+        {scadute.length>0&&<> · di cui <b style={{color:"#A93A1B"}}>{scadute.length} già scadute</b></>}
+        {dopo.length>0&&<> · scadenza successiva {eur2(somma(dopo,"pagabile"))}</>}
+        {daRicevere.length>0&&<> · da ricevere {daRicevere.length} {daRicevere.length===1?"pratica":"pratiche"} ({eur(daRicevere.reduce((s,x)=>s+attesoDi(x),0))} stimati)</>}</div>
+      {(autTutte.length>0||daVer.length>0)&&<div className="hint" style={{marginTop:4}}>Extra fuori contratto: {autTutte.length>0&&<>autorizzati {eur(autTutte.reduce((s,r)=>s+r.fuori,0))}, di cui {eur(autTutte.reduce((s,r)=>s+r.coperti,0))} coperti dal prezzo sopra codice</>}
+        {daVer.length>0&&<>{autTutte.length>0?" · ":""}<b style={{color:"#A93A1B"}}>{daVer.length} da verificare ({eur(daVer.reduce((s,r)=>s+r.fuori,0))})</b>: si decide nella pratica</>}</div>}
+      {daPagare.length>0&&<div className="tbl-wrap" style={{boxShadow:"none",border:0,overflowX:"auto",marginTop:10}}><table>
+        <thead><tr><th>Installatore</th><th>Fattura</th><th>Scadenza</th><th className="num">Da pagare</th><th>Pagamento</th><th>Esito</th>{!ro&&<th></th>}<th>Clienti</th></tr></thead>
+        <tbody>{daPagare.map(f=>(<tr key={f.inst+f.num+f.data}>
+          <td>{f.inst}</td><td style={{whiteSpace:"nowrap"}}>n. {f.num}{f.data&&<div className="hint">{fmtD(f.data)}</div>}</td>
+          <td style={{whiteSpace:"nowrap",color:f.scadenza&&f.scadenza<oggi?"#A93A1B":undefined}}>{f.scadenza?fmtD(f.scadenza):"—"}</td>
+          <td className="num" style={{whiteSpace:"nowrap"}}>{eur2(f.pagabile)}{Math.abs(f.pagabile-f.lordo)>0.5&&<div className="hint">fattura {eur2(f.lordo)}</div>}</td>
+          <td>{f.pagamento||"—"}</td>
+          <td className="hint" style={{color:f.esito.startsWith("OK")?undefined:"#A93A1B"}}>{f.esito}</td>
+          {!ro&&<td><button className="btn gh sm" style={{whiteSpace:"nowrap"}} onClick={()=>segnaPagate([f],oggi)}>✓ Pagata</button></td>}
+          <td style={{minWidth:180}}>{f.righe.map(r=>r.c.cliente).join(", ")}</td>
+        </tr>))}</tbody></table></div>}
+      {!ro&&daPagare.length>1&&<div style={{marginTop:8}}><button className="btn gh sm" onClick={()=>segnaPagate(daPagare,oggi)}>✓ Segna pagate tutte quelle dell'elenco (oggi)</button></div>}
+      <p className="hint" style={{marginTop:10,marginBottom:0}}>Le fatture si registrano nella pratica, sezione «Fattura installatore»: totale, numero, data, pagamento e scadenza. Una fattura su più pratiche si scrive con lo stesso numero su ognuna, con la sua quota. Quando l'amministrazione paga, «Pagata» la toglie dall'elenco.</p>
+    </div></div>);
+}
+
 function Installatori({db,comp,up,flash}){
   const ro=useContext(SoloLettura);
   const stat=useMemo(()=>{const m={};db.installatori.forEach(i=>m[i.nome]={n:0,c:0});comp.forEach(({c})=>{if(c.effInst&&m[c.effInst]){m[c.effInst].n++;m[c.effInst].c+=c.compensoInst;}});return m;},[db,comp]);
   return <Crud title="Installatore"
     items={db.installatori}
+    extra={<PagamentiInstallatori db={db} comp={comp} up={up}/>}
     cols={[{k:"nome",l:"Installatore"},{k:"referente",l:"Referente"},{k:"tel",l:"Telefono"},{l:"Regioni",k:"_reg",render:i=>(i.regioni||[]).join(", ")},{l:"N. pose",num:true,k:"_n",render:i=>(stat[i.nome]?.n||0)},{l:"Compenso tot.",num:true,eur:true,k:"_c",render:i=>eur(stat[i.nome]?.c||0)}]}
     form={(e,s)=>(<div className="form">{Fi(e,s,"Installatore / Ragione sociale","nome")}{Fi(e,s,"Referente","referente")}{Fi(e,s,"Telefono","tel")}{Fi(e,s,"Email","email")}{Fi(e,s,"P.IVA / C.F.","piva")}{Fi(e,s,"PEC","pec")}<div className="fld full"><label>Sede (indirizzo, CAP, città)</label><input value={e.sede||""} onChange={ev=>s("sede",ev.target.value)}/></div><div className="fld full"><label>Regioni di competenza</label><RegionSelect value={e.regioni} onChange={v=>s("regioni",v)}/></div><div className="fld full"><label>Note (abilitazioni DM 37/2008, F-GAS, REA, scadenze…)</label><textarea rows="3" value={e.note||""} onChange={ev=>s("note",ev.target.value)}/></div></div>)}
     onSave={x=>{up(d=>{const i=d.installatori.findIndex(c=>c.id===x.id);delete x.__new;if(i>=0)d.installatori[i]=x;else d.installatori.push(x);return d;});flash("Installatore salvato");}}
@@ -4448,7 +4627,7 @@ const XL_STATI=[
 /* in ordine di avanzamento, e dentro la stessa fase le più recenti prima */
 const xlOrdina=rows=>[...rows].sort((a,b)=>((FASE_IDX[a.c.fase]??9)-(FASE_IDX[b.c.fase]??9))||
   String(b.p.dataInstallazione||b.p.dataVendita||"").localeCompare(String(a.p.dataInstallazione||a.p.dataVendita||"")));
-const xlPosa=({p,c})=>({"N. contratto":p.nContratto,Fase:c.fase,Cliente:c.cliente,Comune:c.comune,Provincia:c.provincia,Consulente:p.consulente,"Data appuntamento":p.dataApp,"Clima 1":p.clima1,"Clima 2":p.clima2,"Clima 3":p.clima3,"Clima 4":p.clima4,"Prodotto Termico":p.termico,Ambito:c.ambito,"Importo vendita":+p.importoVendita||0,Installatore:c.effInst,"Data vendita":p.dataVendita,"Pagamento":p.pagamento||"","Esito finanziamento":p.finStato||"","Data esito finanz.":p.finData||"","Caparra €":p.caparraEur||"","Data caparra":p.caparraEur?(p.dataVendita||""):"","Data saldo":p.saldoData||"","OK posa":p.okPosa||"","Data OK posa":p.okPosaData||"","Note amministrazione":p.finNote||"","Programmata senza OK":c.programmataSenzaOk?"Sì":"","Scad. recesso":c.scadRecesso,Recesso:p.recesso,"Motivo recesso":c.motivo,Listino:p.listino,"di cui extra":c.margine.extraCliente,"Prezzo prodotto":Math.round(c.margine.prezzoProdotto*100)/100,"Fattura totale":c.margine.fattLordo===null?"":c.margine.fattLordo,"Regime IVA fattura":c.margine.fattLordo===null?"":c.margine.regime,"Fattura imponibile":c.margine.fattura===null?"":Math.round(c.margine.fattura*100)/100,"N. fattura":p.fatturaNum||"","Data fattura":p.fatturaData||"","Fattura allegata":(p.fattFiles||[]).length?"Sì":"No","Extra fatturati":c.margine.extraFatturato||"","Scostamento extra":c.margine.scostamento===null?"":c.margine.scostamento,"Venduto netto":Math.round(c.margine.netto*100)/100,"Costo materiali":Math.round(c.margine.materiali*100)/100,"Extra materiali":c.margine.extraMat,"Prezzo minimo":c.margine.prezzoCodice,"Prezzo listino":c.margine.prezzoListino,"Posizione prezzo":c.margine.posizione,"Sopra il minimo":c.margine.sopraCodice,"Provv. imponibile":Math.round((c.margine.provv.base||0)*100)/100,"Provv. %":c.margine.provv.pct===null?"":c.margine.provv.pct,"Provvigione €":c.margine.provv.pct===null?"":Math.round(c.margine.provv.eur*100)/100,"Extra 1":p.vex1||"","Q.tà 1":p.vex1?(p.vq1||1):"","€ 1":p.vex1?(p.vp1||""):"","Extra 2":p.vex2||"","Q.tà 2":p.vex2?(p.vq2||1):"","€ 2":p.vex2?(p.vp2||""):"","Extra 3":p.vex3||"","Q.tà 3":p.vex3?(p.vq3||1):"","€ 3":p.vex3?(p.vp3||""):"","Extra 4":p.vex4||"","Q.tà 4":p.vex4?(p.vq4||1):"","€ 4":p.vex4?(p.vp4||""):"","Extra 5":p.vex5||"","Q.tà 5":p.vex5?(p.vq5||1):"","€ 5":p.vex5?(p.vp5||""):"","Extra dichiarati a contratto €":Math.round(c.margine.extraCliente*100)/100,"Scarto quantità a prezzo cliente €":c.margine.gapVend?Math.round(c.margine.gapVend*100)/100:"","Base addebito":c.margine.addebitoFonte||"","Addebito extra €":c.margine.addebito?Math.round(c.margine.addebito*100)/100:"","Addebito proposto €":c.margine.addebitoProposto?Math.round(c.margine.addebitoProposto*100)/100:"","Esito addebito":c.margine.addebitoStato||(c.margine.addebitoDaValutare?"Da valutare":""),"Provvigione netta €":c.margine.provvNetta===null?"":Math.round(c.margine.provvNetta*100)/100,"Margine effettivo €":c.margine.okReale?Math.round(c.margine.eurReale*100)/100:"","Margine effettivo %":c.margine.okReale?Math.round(c.margine.pctReale*10)/10:"","Contatto personale":p.contattoPersonale==="Sì"?"Sì":"","Provv. liquidabile dal":p.dataInstallazione?addDays(p.dataInstallazione,15):"","Costo totale":Math.round(c.margine.costoTot*100)/100,"Margine €":c.margine.ok?Math.round(c.margine.eur*100)/100:"","Margine %":c.margine.ok?Math.round(c.margine.pct*10)/10:"","Dati mancanti":c.margine.mancano.join("; "),Preparazione:p.preparazione,"Modalità consegna":p.modalitaConsegna,"Data consegna":p.dataConsegna,"Periodo posa":c.finestra,"Periodo dal":p.finestraDa,"Periodo al":p.finestraA,"Stato periodo":c.finestraStato,"Data prevista":p.dataPrevista,"Data installazione":p.dataInstallazione,FASE:c.fase,"Compenso posa":c.compensoStd,"Extra":c.extraTot,"Posa extra 1":p.ex1||"","Posa q.tà 1":p.ex1?(p.q1||1):"","Posa extra 2":p.ex2||"","Posa q.tà 2":p.ex2?(p.q2||1):"","Posa extra 3":p.ex3||"","Posa q.tà 3":p.ex3?(p.q3||1):"","Posa extra 4":p.ex4||"","Posa q.tà 4":p.ex4?(p.q4||1):"","Posa extra 5":p.ex5||"","Posa q.tà 5":p.ex5?(p.q5||1):"","Compenso installatore":c.compensoInst,"Cliente saldato":p.saldato,"Da programmare":c.daPian?"SÌ":"","Link foto/video":p.link,Note:p.note});
+const xlPosa=({p,c})=>({"N. contratto":p.nContratto,Fase:c.fase,Cliente:c.cliente,Comune:c.comune,Provincia:c.provincia,Consulente:p.consulente,"Data appuntamento":p.dataApp,"Clima 1":p.clima1,"Clima 2":p.clima2,"Clima 3":p.clima3,"Clima 4":p.clima4,"Prodotto Termico":p.termico,Ambito:c.ambito,"Importo vendita":+p.importoVendita||0,Installatore:c.effInst,"Data vendita":p.dataVendita,"Pagamento":p.pagamento||"","Esito finanziamento":p.finStato||"","Data esito finanz.":p.finData||"","Caparra €":p.caparraEur||"","Data caparra":p.caparraEur?(p.dataVendita||""):"","Data saldo":p.saldoData||"","OK posa":p.okPosa||"","Data OK posa":p.okPosaData||"","Note amministrazione":p.finNote||"","Programmata senza OK":c.programmataSenzaOk?"Sì":"","Scad. recesso":c.scadRecesso,Recesso:p.recesso,"Motivo recesso":c.motivo,Listino:p.listino,"di cui extra":c.margine.extraCliente,"Prezzo prodotto":Math.round(c.margine.prezzoProdotto*100)/100,"Fattura totale":c.margine.fattLordo===null?"":c.margine.fattLordo,"Regime IVA fattura":c.margine.fattLordo===null?"":c.margine.regime,"Fattura imponibile":c.margine.fattura===null?"":Math.round(c.margine.fattura*100)/100,"N. fattura":p.fatturaNum||"","Data fattura":p.fatturaData||"","Pagamento fattura":p.fatturaPagamento||"","Scadenza fattura":p.fatturaScadenza||"","Fattura pagata il":p.fatturaPagata||"","Extra fuori contratto autorizzati":p.extraAutorizzati||"","Fattura allegata":(p.fattFiles||[]).length?"Sì":"No","Extra fatturati":c.margine.extraFatturato||"","Scostamento extra":c.margine.scostamento===null?"":c.margine.scostamento,"Venduto netto":Math.round(c.margine.netto*100)/100,"Costo materiali":Math.round(c.margine.materiali*100)/100,"Extra materiali":c.margine.extraMat,"Prezzo minimo":c.margine.prezzoCodice,"Prezzo listino":c.margine.prezzoListino,"Posizione prezzo":c.margine.posizione,"Sopra il minimo":c.margine.sopraCodice,"Provv. imponibile":Math.round((c.margine.provv.base||0)*100)/100,"Provv. %":c.margine.provv.pct===null?"":c.margine.provv.pct,"Provvigione €":c.margine.provv.pct===null?"":Math.round(c.margine.provv.eur*100)/100,"Extra 1":p.vex1||"","Q.tà 1":p.vex1?(p.vq1||1):"","€ 1":p.vex1?(p.vp1||""):"","Extra 2":p.vex2||"","Q.tà 2":p.vex2?(p.vq2||1):"","€ 2":p.vex2?(p.vp2||""):"","Extra 3":p.vex3||"","Q.tà 3":p.vex3?(p.vq3||1):"","€ 3":p.vex3?(p.vp3||""):"","Extra 4":p.vex4||"","Q.tà 4":p.vex4?(p.vq4||1):"","€ 4":p.vex4?(p.vp4||""):"","Extra 5":p.vex5||"","Q.tà 5":p.vex5?(p.vq5||1):"","€ 5":p.vex5?(p.vp5||""):"","Extra dichiarati a contratto €":Math.round(c.margine.extraCliente*100)/100,"Scarto quantità a prezzo cliente €":c.margine.gapVend?Math.round(c.margine.gapVend*100)/100:"","Base addebito":c.margine.addebitoFonte||"","Addebito extra €":c.margine.addebito?Math.round(c.margine.addebito*100)/100:"","Addebito proposto €":c.margine.addebitoProposto?Math.round(c.margine.addebitoProposto*100)/100:"","Esito addebito":c.margine.addebitoStato||(c.margine.addebitoDaValutare?"Da valutare":""),"Provvigione netta €":c.margine.provvNetta===null?"":Math.round(c.margine.provvNetta*100)/100,"Margine effettivo €":c.margine.okReale?Math.round(c.margine.eurReale*100)/100:"","Margine effettivo %":c.margine.okReale?Math.round(c.margine.pctReale*10)/10:"","Contatto personale":p.contattoPersonale==="Sì"?"Sì":"","Provv. liquidabile dal":p.dataInstallazione?addDays(p.dataInstallazione,15):"","Costo totale":Math.round(c.margine.costoTot*100)/100,"Margine €":c.margine.ok?Math.round(c.margine.eur*100)/100:"","Margine %":c.margine.ok?Math.round(c.margine.pct*10)/10:"","Dati mancanti":c.margine.mancano.join("; "),Preparazione:p.preparazione,"Modalità consegna":p.modalitaConsegna,"Data consegna":p.dataConsegna,"Periodo posa":c.finestra,"Periodo dal":p.finestraDa,"Periodo al":p.finestraA,"Stato periodo":c.finestraStato,"Data prevista":p.dataPrevista,"Data installazione":p.dataInstallazione,FASE:c.fase,"Compenso posa":c.compensoStd,"Extra":c.extraTot,"Posa extra 1":p.ex1||"","Posa q.tà 1":p.ex1?(p.q1||1):"","Posa extra 2":p.ex2||"","Posa q.tà 2":p.ex2?(p.q2||1):"","Posa extra 3":p.ex3||"","Posa q.tà 3":p.ex3?(p.q3||1):"","Posa extra 4":p.ex4||"","Posa q.tà 4":p.ex4?(p.q4||1):"","Posa extra 5":p.ex5||"","Posa q.tà 5":p.ex5?(p.q5||1):"","Compenso installatore":c.compensoInst,"Cliente saldato":p.saldato,"Da programmare":c.daPian?"SÌ":"","Link foto/video":p.link,Note:p.note});
 const xlPose=(comp,f)=>xlOrdina(comp.filter(({c})=>f(c))).map(xlPosa);
 
 /* --- controllo margini per l'amministrazione: le stesse voci del riquadro margine
