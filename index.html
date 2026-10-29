@@ -270,7 +270,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="22 ott 2026 · 24";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="29 ott 2026 · 25";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -437,6 +437,66 @@ const PREZZI_TERM={
  "Aquatech Basamento 300 LT":[10100,12700,10500,13200,13200,16500,13700,17200],
  "Aquacare (addolcitore)":  [2478,3098,2478,3098,     3300,4200,3300,4200],
  "Bubble (frigogasatore)":  [5541,6926,5541,6926,     7300,9200,7300,9200]};
+/* LISTINO PRECEDENTE — rev. 04-26 del 09/04/2026, per le vendite fino al 07/07/2026.
+   Dall'08/07 valgono i listini rev. 06-26 qui sopra: prezzi clima più bassi e stop sconto.
+   Dal 22/06 al 07/07 sul clima era ammesso uno sconto fino al 25% sul listino: in quei
+   giorni il prezzo minimo è il listino meno il 25%, se è più basso del codice.
+   Termico, Aquacare/Bubble ed extra hanno gli stessi prezzi nei due listini: qui c'è solo
+   il clima, il resto si prende dalle tabelle attuali. ONE = Arquati + 30%, come allora.
+   Stesse colonne di PREZZI_CLIMA. Nel PDF il Trial senza omaggio 8800 / COD.000.7000 è
+   intestato «12000+12000+9000»: è il 9+9+9, come nella riga con omaggio. */
+const PREZZI_CLIMA_0426={
+ "Mono 9":            [4100,5200,4500,5700,  5330,6700,5850,7400],
+ "Mono 12":           [4900,6200,5300,6700,  6370,8000,6890,8700],
+ "Mono 18":           [5600,7000,6000,7500,  7280,9100,7800,9800],
+ "Mono 24":           [6700,8400,7100,8900,  8710,10900,9230,11600],
+ "Dual 9+9":          [6500,8200,6900,8700,  8450,10600,8970,11300],
+ "Dual 9+12":         [6800,8500,7200,9000,  8840,11100,9360,11700],
+ "Dual 12+12":        [7100,8900,7500,9400,  9230,11600,9750,12200],
+ "Trial 9+9+9":       [7000,8800,7400,9300,  9100,11400,9620,12100],
+ "Trial 9+9+12":      [7300,9200,7700,9700,  9490,11900,10010,12600],
+ "Trial 12+12+12":    [7500,9400,7900,9900,  9750,12200,10270,12900],
+ "Quadri 9+9+9+9":    [8700,10900,9100,11400, 11310,14200,11830,14800],
+ "Quadri 9+9+9+12":   [8900,11200,9300,11700, 11570,14500,12090,15200],
+ "Combo Mono 9+9":          [6000,7500,6000,7500,    7800,9800,7800,9800],
+ "Combo Mono 12+9":         [6200,7800,6200,7800,    8060,10100,8060,10100],
+ "Combo Mono 12+12":        [6300,7900,6300,7900,    8190,10300,8190,10300],
+ "Combo Mono 18+9":         [6600,8300,6600,8300,    8580,10800,8580,10800],
+ "Combo Mono 18+12":        [6700,8400,6700,8400,    8710,10900,8710,10900],
+ "Combo Mono 18+18":        [8400,10500,8400,10500,  10920,13700,10920,13700],
+ "Combo Mono 24+9":         [8200,10300,8200,10300,  10660,13400,10660,13400],
+ "Combo Mono 24+12":        [7900,9900,7900,9900,    10270,12900,10270,12900],
+ "Combo Mono 24+18":        [8800,11000,8800,11000,  11440,14300,11440,14300],
+ "Combo Mono 24+24":        [9600,12000,9600,12000,  12480,15600,12480,15600],
+ "Combo Dual + Mono 9/12":  [9400,11800,9400,11800,  12200,15300,12200,15300],
+ "Combo Dual + Mono 18/24": [10900,13700,10900,13700,14170,17800,14170,17800],
+ "Combo Dual + Dual":       [11100,13900,11100,13900,14430,18100,14430,18100],
+ "Combo Trial + Mono 9/12": [9000,11250,9000,11250,  12000,15600,12000,15600],
+ "Combo Trial + Mono 18/24":[11000,13800,11000,13800,14300,17900,14300,17900],
+ "Combo Trial + Dual":      [11600,14500,11600,14500,15080,18900,15080,18900],
+ "Combo Trial + Trial":     [13900,17400,13900,17400,18070,22600,18070,22600],
+ "Combo Quadri + Mono 9/12":[12600,15800,12600,15800,16380,20500,16380,20500],
+ "Combo Quadri + Mono 18/24":[13100,16400,13100,16400,17030,21300,17030,21300],
+ "Combo Quadri + Dual":     [13600,17000,13600,17000,17680,22100,17680,22100],
+ "Combo Quadri + Trial":    [13500,16900,13500,16900,16400,22900,16400,22900],
+ "Combo Quadri + Quadri":   [16100,20200,16100,20200,20930,26200,20930,26200]};
+/* listini che non valgono più, dal più vecchio: «al» = ultimo giorno di vendita in cui valeva */
+const LISTINI_PRECEDENTI=[
+  {nome:"rev. 04-26 del 09/04/2026",al:"2026-07-07",clima:PREZZI_CLIMA_0426,sconto:{dal:"2026-06-22",pct:25}}];
+/* il listino in vigore il giorno della vendita (null = quello attuale). Senza data di
+   vendita si usa quello attuale. */
+const listinoDellaVendita=dataVendita=>dataVendita?LISTINI_PRECEDENTI.find(l=>dataVendita<=l.al)||null:null;
+const testoListino=lv=>lv?"listino "+lv.nome+", valido per le vendite fino al "+fmtD(lv.al)+(lv.sconto?" (con lo sconto massimo del "+lv.sconto+"% dal "+fmtD(lv.scontoDal)+")":""):"";
+/* riga di prezzi clima del listino della vendita: prezzi del listino vecchio e, nei giorni
+   dello sconto, prezzo minimo = listino − sconto. null se il listino vecchio non ha quella
+   configurazione: allora vale la riga attuale. */
+const rigaClimaStorica=(LV,config,dataVendita)=>{
+  const v=LV&&LV.clima[config];if(!v)return null;
+  const r=mkRow(v);
+  if(LV.sconto&&dataVendita>=LV.sconto.dal){const f=1-LV.sconto.pct/100;
+    [["cod","lis"],["codOm","lisOm"],["oneCod","oneLis"],["oneCodOm","oneLisOm"]].forEach(([c,l])=>{r[c]=Math.min(r[c],Math.round(r[l]*f));});}
+  return r;
+};
 /* costo materiali clima, dal configuratore (il termico è in MAT_TERM, qui sotto). */
 const MAT_CLIMA={"Mono 9":357.76,"Mono 12":387.44,"Mono 18":573.51,"Mono 24":807.58,
  "Dual 9+9":873.90,"Dual 9+12":873.90,"Dual 12+12":873.90,
@@ -1384,6 +1444,10 @@ function compute(p,db){
      Le righe omaggio NON entrano nella forbice del prodotto: l'unità regalata è già
      dentro la colonna "con omaggio", e i 900 dell'installazione sono una voce a sé. */
   const LIS=p.listino||"";
+  /* listino in vigore il giorno della vendita: per le vendite fino al 07/07/2026 il clima
+     ha i prezzi del listino di aprile (e dal 22/06 lo sconto massimo del 25%) */
+  const LV=listinoDellaVendita(p.dataVendita);
+  const scontoVendita=!!(LV&&LV.sconto&&p.dataVendita>=LV.sconto.dal);
   const omaggioInstallazione=omaggioInstallato?(+K.omaggioPrezzoInst||0):0;
   let pCod=0,pList=0,pNoto=0,nRighe=0;
   const prezzoManca=[];
@@ -1398,7 +1462,8 @@ function compute(p,db){
   const righeProd=[];
   if(p.termico&&p.termico!=="Altro termico")righeProd.push({k:"termico",nome:p.termico,row:(K.termico||[]).find(x=>x.prodotto===p.termico)});
   ["clima1","clima2","clima3","clima4"].forEach(k=>{const cf=p[k];
-    if(cf&&!isOmaggio(cf))righeProd.push({k,nome:cf,row:(K.clima||[]).find(x=>x.config===cf)});});
+    if(cf&&!isOmaggio(cf)){const rs=rigaClimaStorica(LV,cf,p.dataVendita);
+      righeProd.push({k,nome:cf,row:rs||(K.clima||[]).find(x=>x.config===cf),storico:!!rs});}});
   /* Chi porta l'omaggio? Lo dice il contratto. Sul listino Arquati è indifferente
      (tutti i Mono hanno lo stesso sovrapprezzo), su ARQUATIONE no: Mono 18 e Mono 24
      hanno un sovrapprezzo diverso da Mono 9 e 12, e cambia codice e listino. */
@@ -1511,6 +1576,8 @@ function compute(p,db){
   margine.prezzoManca=prezzoManca;
   margine.prezzoCodice=pMin;margine.prezzoListino=pList;margine.prezzoNoto=prezzoNoto;
   margine.codiceTot=codiceTot;margine.listinoTot=pList>0?pList+extraCliente+omaggioInstallazione:0;
+  /* quale listino ha dato i prezzi del clima: null = quello attuale */
+  margine.listinoVendita=righeProd.some(r=>r.storico)?{nome:LV.nome,al:LV.al,sconto:scontoVendita?LV.sconto.pct:0,scontoDal:LV.sconto&&LV.sconto.dal}:null;
   /* i 900 dell'installazione omaggio: una parte va all'installatore, il resto è nostro */
   margine.omaggioDato=omaggioDato;margine.omaggioInstallato=omaggioInstallato;
   margine.omaggioOpzioni=omaggioOpzioni;margine.omaggioConta=omaggioConta;margine.omaggioSu=omaggioSu;margine.omaggioFuoriListino=omaggioFuoriListino;
@@ -3007,7 +3074,7 @@ function PoseForm({p,db,onChange,onClose,onDelete,esiste}){
             onRemove={async(fx)=>{if(!confirm("Rimuovere «"+fx.name+"»?"))return;set("files",(f.files||[]).filter(x=>x.id!==fx.id));}}/>
         </div>
         <div className="fld"><label>Extra materiali € (usati in più su questo cantiere)</label><input type="number" value={f.extraMateriali||""} onChange={e=>set("extraMateriali",e.target.value)} placeholder="0"/>
-          {c.margine.prezzoNoto&&<span className="hint">Forbice di vendita: prezzo codice <b>{eur(c.margine.prezzoCodice)}</b> — listino <b>{eur(c.margine.prezzoListino)}</b> (superabile). Riferita al solo prodotto, senza extra né omaggio.</span>}
+          {c.margine.prezzoNoto&&<span className="hint">Forbice di vendita: prezzo codice <b>{eur(c.margine.prezzoCodice)}</b> — listino <b>{eur(c.margine.prezzoListino)}</b> (superabile). Riferita al solo prodotto, senza extra né omaggio.{c.margine.listinoVendita&&<> Prezzi del <b>{testoListino(c.margine.listinoVendita)}</b>: è quello in vigore il giorno della vendita.</>}</span>}
         </div>
         {F("Note","note","textarea")}
         {F("Note per l'installatore (stampate sull'ordine di lavoro)","noteInst","textarea")}
@@ -3055,6 +3122,7 @@ function PoseForm({p,db,onChange,onClose,onDelete,esiste}){
                 : "fascia "+(V.soglia>=25?"≥25%":V.soglia+"–"+(V.soglia===15?"24,9":V.soglia===5?"14,9":"4,9")+"%")+" sopra codice → "+V.pctBase+"%"}</span>
               {V.bonus>0&&<span className="pz pz-pieno">contatto personale +{V.bonus}</span>}
               {V.markup!==null&&<span className="hint">venduto {V.markup.toFixed(1)}% sopra il prezzo codice del contratto ({eur(V.codiceTot)})</span>}
+              {c.margine.listinoVendita&&<span className="hint">· prezzo codice del {testoListino(c.margine.listinoVendita)}</span>}
             </div>
             <div className="costrow tot"><span>Provvigione {V.pct}%</span><span>{eur(V.eur)}</span></div>
             {V.fonte==="manuale"&&<p className="hint" style={{margin:"7px 0 0"}}>Percentuale forzata a mano: la fascia automatica è ignorata.</p>}
@@ -3625,6 +3693,33 @@ function Tariffe({db,up,flash}){
 }
 
 /* ---------- Margini ---------- */
+/* un listino che non vale più, in sola lettura: il gestionale lo usa da solo per le
+   pratiche vendute nel suo periodo, guardando la data di vendita */
+function ListinoPrecedente({L}){
+  const n=v=>(+v).toLocaleString("it-IT");
+  const f=L.sconto?1-L.sconto.pct/100:1;
+  const cella=(cod,lis,bordo)=>{const min=L.sconto?Math.min(cod,Math.round(lis*f)):cod;return (<>
+    <td className="num" style={bordo?{borderLeft:"2px solid var(--line)"}:{}}>{n(cod)}{min<cod&&<div className="hint" style={{whiteSpace:"nowrap"}}>dal {fmtD(L.sconto.dal).slice(0,5)}: {n(min)}</div>}</td>
+    <td className="num">{n(lis)}</td></>);};
+  return (<>
+    <p className="hint" style={{marginTop:0}}>Prezzi del <b>listino {L.nome}</b>, ivati. Valgono per le pratiche <b>vendute fino al {fmtD(L.al)}</b>: il gestionale li usa da solo, guardando la data di vendita. Dal giorno dopo, {fmtD(addDays(L.al,1))}, vale il listino attuale (schede Clima e Termico).
+      {L.sconto&&<> Dal {fmtD(L.sconto.dal)} al {fmtD(L.al)} era ammesso uno sconto fino al {L.sconto.pct}% sul listino: in quei giorni il prezzo minimo è il listino meno il {L.sconto.pct}%, scritto sotto il codice.</>} Termico, Aquacare, Bubble ed extra avevano gli stessi prezzi di oggi.</p>
+    <div className="tbl-wrap" style={{boxShadow:"none",border:0,overflowX:"auto"}}>
+      <table><thead>
+        <tr><th rowSpan={2}>Configurazione</th>
+          <th className="num" colSpan={4} style={{borderLeft:"2px solid var(--line)"}}>ARQUATI</th>
+          <th className="num" colSpan={4} style={{borderLeft:"2px solid var(--line)"}}>ARQUATI ONE</th></tr>
+        <tr><th className="num" style={{borderLeft:"2px solid var(--line)"}}>Codice</th><th className="num">Listino</th><th className="num">Cod. c/om.</th><th className="num">List. c/om.</th>
+            <th className="num" style={{borderLeft:"2px solid var(--line)"}}>Codice</th><th className="num">Listino</th><th className="num">Cod. c/om.</th><th className="num">List. c/om.</th></tr>
+      </thead>
+      <tbody>{Object.entries(L.clima).map(([config,v])=>(<tr key={config}>
+        <td style={{whiteSpace:"nowrap"}}>{config}</td>
+        {cella(v[0],v[1],true)}{cella(v[2],v[3])}{cella(v[4],v[5],true)}{cella(v[6],v[7])}
+      </tr>))}</tbody></table>
+    </div>
+  </>);
+}
+
 function Margini({db,setDb,comp,openPose,flash}){
   const [vista,setVista]=useState("pratiche");
   const [tab2,setTab2]=useState("clima");
@@ -3792,11 +3887,12 @@ function Margini({db,setDb,comp,openPose,flash}){
 
     <div className="card"><h3>Listini e costi materiali</h3><div className="bd">
       <p className="hint">Prezzi <b>ivati</b> dai listini ufficiali Arquati Ecoliving e ARQUATIONE. I campi in rosso sono vuoti e bloccano il calcolo del margine o del posizionamento di prezzo.</p>
-      <div style={{display:"flex",gap:9,marginTop:10,marginBottom:8}}>
+      <div style={{display:"flex",gap:9,marginTop:10,marginBottom:8,flexWrap:"wrap"}}>
         <button className={"btn "+(tab2==="clima"?"":"gh")+" sm"} onClick={()=>setTab2("clima")}>Clima ({(K.clima||[]).length})</button>
         <button className={"btn "+(tab2==="termico"?"":"gh")+" sm"} onClick={()=>setTab2("termico")}>Termico ({(K.termico||[]).length})</button>
+        <button className={"btn "+(tab2==="aprile"?"":"gh")+" sm"} onClick={()=>setTab2("aprile")}>Clima venduto fino al {fmtD(LISTINI_PRECEDENTI[0].al)}</button>
       </div>
-      <div className="tbl-wrap" style={{boxShadow:"none",border:0,overflowX:"auto"}}>
+      {tab2==="aprile"?<ListinoPrecedente L={LISTINI_PRECEDENTI[0]}/>:<div className="tbl-wrap" style={{boxShadow:"none",border:0,overflowX:"auto"}}>
         <table><thead>
           <tr><th rowSpan={2}>{tab2==="clima"?"Configurazione":"Prodotto"}</th><th className="num" rowSpan={2} style={{width:100}}>Materiali €</th>
             <th className="num" colSpan={4} style={{borderLeft:"2px solid var(--line)"}}>ARQUATI</th>
@@ -3822,7 +3918,7 @@ function Margini({db,setDb,comp,openPose,flash}){
             {cell("oneCod",true)}{cell("oneLis")}{cell("oneCodOm")}{cell("oneLisOm")}
           </tr>);})}
         </tbody></table>
-      </div>
+      </div>}
       <p className="hint" style={{marginTop:10}}>I <b>prezzi codice</b> sono quelli scritti nei listini dentro <span className="mono">COD.000.xxxx</span>: per un Mono 9.000 Arquati, <span className="mono">COD.000.3300</span> significa che sotto <b>3.300 €</b> non si vende. Caricati tutti da entrambi i listini, con e senza omaggio. I <b>costi materiali</b> del termico invece non li avevamo da nessuna parte: senza quelli il margine su caldaie, ibridi e scaldacqua non si calcola.</p>
     </div></div>
 
