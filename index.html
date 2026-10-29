@@ -270,7 +270,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="29 ott 2026 · 26";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="29 ott 2026 · 27";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -3411,7 +3411,8 @@ function PagamentiInstallatori({db,comp,up}){
       +daRicevere.map(x=>'<tr><td>'+x.c.effInst+'</td><td>'+x.c.cliente+'</td><td>'+fmtD(x.p.dataInstallazione)+'</td><td class="num">'+e(attesoDi(x))+'</td></tr>').join("")
       +'<tr><th colspan="3">Totale</th><th class="num">'+e(daRicevere.reduce((s,x)=>s+attesoDi(x),0))+'</th></tr></tbody></table>':'';
     printHTML(titolo,'<style>td.num,th.num{white-space:nowrap}</style><p>Fatture installatori da pagare entro il <b>'+fmtD(fine)+'</b>, comprese le scadute non ancora pagate. Ogni fattura è confrontata con il tariffario e con il contratto del cliente.</p>'
-      +'<div class="sec">Sintesi per installatore</div>'+tS+'<div class="sec">Fatture da pagare</div>'+tP+tX+tD);
+      +(daPagare.length?'<div class="sec">Sintesi per installatore</div>'+tS+'<div class="sec">Fatture da pagare</div>'+tP:
+        '<p><b>Nessuna fattura da pagare registrata nel gestionale'+(chi?' per '+chi:'')+'.</b> Le fatture si registrano nella pratica, sezione «Fattura installatore».</p>')+tX+tD);
   };
   return (<div className="card" style={{marginTop:16}}>
     <h3>Pagamenti installatori <span className="tag">stampa ed Excel per l'amministrazione</span></h3>
@@ -3422,6 +3423,7 @@ function PagamentiInstallatori({db,comp,up}){
         <button className="btn" onClick={scarica}>⤓ Scarica Excel</button>
         <button className="btn gh" onClick={stampa}>🖨 Stampa</button>
       </div>
+      {!tutte.length&&<div className="alert" style={{marginBottom:10}}>Nel gestionale non c'è ancora nessuna fattura installatore registrata: per questo tutte le pratiche installate risultano «da ricevere». Le fatture si scrivono nella pratica, sezione «Fattura installatore» (totale, numero, data, pagamento e scadenza), oppure si caricano tutte insieme con un file di aggiornamento preparato (Importa → Aggiornamento preparato).</div>}
       <div className="hint">Da pagare entro il <b>{fmtD(fine)}</b>: <b>{daPagare.length}</b> {daPagare.length===1?"fattura":"fatture"} per <b>{eur2(somma(daPagare,"pagabile"))}</b>
         {scadute.length>0&&<> · di cui <b style={{color:"#A93A1B"}}>{scadute.length} già scadute</b></>}
         {dopo.length>0&&<> · scadenza successiva {eur2(somma(dopo,"pagabile"))}</>}
