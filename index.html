@@ -270,7 +270,7 @@ code.sql{display:block;background:#F3F6F1;padding:8px 10px;border-radius:6px;mar
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useMemo,useRef,useContext}=React;
-const VERSIONE="29 ott 2026 · 27";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
+const VERSIONE="4 nov 2026 · 28";   // da aggiornare a ogni pubblicazione: si legge in basso nel menu
 const SoloLettura=React.createContext(false);   // true per gli utenti che possono solo proporre modifiche
 
 /* ---------- dati statici ---------- */
@@ -3158,11 +3158,24 @@ function PoseForm({p,db,onChange,onClose,onDelete,esiste}){
           <div className="it big"><div className="k">Compenso installatore</div><div className="v mono">{c.fase==="RECESSO"?("€ 0 — "+c.motivo):eur(c.compensoInst)}</div></div>
 
           <div className="sec" style={{marginTop:16}}>Margine della pratica</div>
-          {c.fase==="RECESSO"?
-          <div className="alert" style={{borderColor:"#DDD",background:"#FAFAFA"}}>
-            <b style={{color:"#777"}}>Pratica in recesso — nessun margine da calcolare</b>
-            <p className="hint" style={{margin:0}}>Le pratiche recedute restano fuori da tutti i conteggi di margine.</p>
-          </div>
+          {c.fase==="RECESSO"?(()=>{
+            /* Sul recesso non c'è margine, ma serve sapere quanto ci sarebbe costato il materiale:
+               stesso costo vivo della tabella «Listini e costi materiali», prodotto per prodotto. */
+            const K=db.costi,num=v=>(v===""||v===undefined||v===null)?null:(+v||0);
+            const righeMat=c.climaList.map(cf=>{const r=(K.clima||[]).find(x=>x.config===cf)||(isOmaggio(cf)?(K.clima||[]).find(x=>x.config===omCanon(cf)):null);return [cf,r?num(r.materiali):null];});
+            if(f.termico&&f.termico!=="Altro termico"){const r=(K.termico||[]).find(x=>x.prodotto===f.termico);righeMat.push([f.termico,r?num(r.materiali):null]);}
+            const extraMat=c.margine.extraMat||0;
+            return <div className="alert" style={{borderColor:"#DDD",background:"#FAFAFA"}}>
+              <b style={{color:"#777"}}>Pratica in recesso — fuori dai conteggi di margine</b>
+              {righeMat.length?<div style={{marginTop:8}}>
+                <p className="hint" style={{margin:"0 0 4px"}}>Costo del materiale che avremmo usato (costo vivo per noi):</p>
+                {righeMat.map(([n,v],i)=>(<div className="costrow" key={i}><span>{n}</span><span>{v===null?<span className="hint">costo mancante</span>:eur(v)}</span></div>))}
+                {extraMat>0&&<div className="costrow"><span>Extra materiali di cantiere</span><span>{eur(extraMat)}</span></div>}
+                <div className="costrow tot"><span>Costo materiale</span><span>{eur(c.margine.materiali+extraMat)}</span></div>
+                {righeMat.some(r=>r[1]===null)&&<p className="hint" style={{margin:"6px 0 0"}}>Per qualche prodotto manca il costo: completalo in Margini → Listini e costi materiali.</p>}
+              </div>
+              :<p className="hint" style={{margin:"6px 0 0"}}>Manca l'impianto venduto: inseriscilo per vedere quanto sarebbe costato il materiale.</p>}
+            </div>;})()
           :c.margine.ok?<>
             <div className="it big"><div className="k">Margine</div>
               <div className="v mono"><span className={"mrg mrg-"+c.margine.cls} style={{fontSize:17,padding:"4px 12px"}}>{c.margine.pct.toFixed(1)}%</span> <span style={{marginLeft:8}}>{eur(c.margine.eur)}</span></div>
